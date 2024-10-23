@@ -1,5 +1,5 @@
 {
-  "name": "SkarptW_Api_to_influx",
+  "name": "localaddontoinflux",
   "version": "1.0",
   "slug": "SkarptW_Api_to_influx",
   "description": "localdatabase v2 gateway on local database home assistant",
