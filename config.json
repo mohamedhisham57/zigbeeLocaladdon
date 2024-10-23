@@ -1,20 +1,18 @@
 {
-  "name": "localaddontoinflux",
+  "name": "localaddonapi3",
   "version": "1.0",
-  "slug": "localaddonapitoinflux",
+  "slug": "localaddonapi3",
   "description": "localdatabase v2 gateway on local database home assistant",
-  "arch": [ "armhf", "armv7", "aarch64", "amd64", "i386" ],
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "startup": "application",
   "boot": "auto",
-  "options": {
-    "database_port": "8086",
+  "options": {"database_port": "8086",
     "username_database": "!secret username_database",
     "password_database": "!secret password_database",
     "internal_backup_database_name": "!secret internal_backup_database_name",
     "internal_database_name": "!secret internal_database_name",
     "database_ip": "!secret database_ip",
-    "measurement": "!secret measurement"
-  },
+    "measurement": "!secret measurement"},
   "schema": {
     "database_port": "str",
     "username_database": "str",
@@ -30,7 +28,7 @@
   "map": [
     "ssl:rw",
     "backup:rw"
-  ],
-  "host_network": true,
+  ] ,
+  "host_network" : true ,
   "hassio_api": true
 }
