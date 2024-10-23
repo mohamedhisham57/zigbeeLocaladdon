@@ -1,7 +1,7 @@
 {
-  "name": "localaddonapi3",
+  "name": "SkarptW_Api_to_influx",
   "version": "1.0",
-  "slug": "localaddonapi3",
+  "slug": "SkarptW_Api_to_influx",
   "description": "localdatabase v2 gateway on local database home assistant",
   "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "startup": "application",
