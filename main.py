@@ -282,13 +282,16 @@ def preprocess_packet(data):
                 ConvertPacketIntoElemets(collecting_packet)
             full_packet_list = []
             return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
+        elif not data.startswith("545a"):
+            pass
 
         else:
             full_packet_list.append(data)
 
         return 0
-    except:
-        pass
+    except Exception as e:
+        print(f"Error processing packet: {e}")
+        return 0
 
 
 class EchoHandler(asyncore.dispatcher_with_send):
