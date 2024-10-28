@@ -291,6 +291,20 @@ class EchoHandler(asyncore.dispatcher_with_send):
                 pass
 
 
+class EchoHandler(asyncore.dispatcher_with_send):
+
+    def handle_read(self):
+        data = self.recv(8192)
+        if data:
+            try:
+                send_list = preprocess_packet(data)
+                if send_list != 0 :
+                    for i in send_list :
+                        self.send(i)
+            except :
+                pass
+
+
 class EchoServer(asyncore.dispatcher):
 
     def __init__(self, host, port):
