@@ -23,11 +23,11 @@ broker_address = "192.168.1.123"
 broker_port = 1883
 responsePacket = ''
 response2 = ''
-INTERNAL_DATABASE_NAME = "luxor"
+INTERNAL_DATABASE_NAME = "Freezers"
 INTERNAL_BACKUP_DATABASE_NAME = "Hold"
 USERNAME_DATABASE = "skarpt"
 PASSWORD_DATABASE = "skarpt"
-DATABASE_IP = '192.168.0.105'
+DATABASE_IP = '192.168.0.107'
 measurement = "Tzone"
 DATABASE_PORT='8086'
 
