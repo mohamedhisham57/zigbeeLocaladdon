@@ -23,11 +23,11 @@ broker_address = "192.168.1.123"
 broker_port = 1883
 responsePacket = ''
 response2 = ''
-INTERNAL_DATABASE_NAME = "luxor"
+INTERNAL_DATABASE_NAME = "mansoura"
 INTERNAL_BACKUP_DATABASE_NAME = "Hold"
 USERNAME_DATABASE = "skarpt"
 PASSWORD_DATABASE = "skarpt"
-DATABASE_IP = '192.168.0.105'
+DATABASE_IP = '192.168.0.100'
 measurement = "Tzone"
 DATABASE_PORT='8086'
 
@@ -131,6 +131,7 @@ def TestServerConnection():  # return network status
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((Serverip, Serverport))
         s.send(binascii.unhexlify("00"))
+        print("test sucess")
         return True
     except:
         return False
@@ -216,8 +217,10 @@ def logic(packet):
     if TestServerConnection():
         SendPacketToServer(packet)
         if Checked_SavedHolding_Database():
+            print("sending saved data")
             threading.Thread(target=Send_Saved_Database, args=[]).start()
     else:
+        print("failed to send packet")
         SendPacketHoldingDataBase(packet)
 
 
