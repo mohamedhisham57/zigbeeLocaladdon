@@ -23,11 +23,11 @@ broker_address = "192.168.1.123"
 broker_port = 1883
 responsePacket = ''
 response2 = ''
-INTERNAL_DATABASE_NAME = "mansoura"
+INTERNAL_DATABASE_NAME = "mostord"
 INTERNAL_BACKUP_DATABASE_NAME = "Hold"
 USERNAME_DATABASE = "skarpt2"
 PASSWORD_DATABASE = "skarpt"
-DATABASE_IP = '192.168.0.100'
+DATABASE_IP = '192.168.1.100'
 measurement = "Tzone"
 DATABASE_PORT='8086'
 
