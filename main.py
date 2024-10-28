@@ -23,11 +23,11 @@ broker_address = "192.168.1.123"
 broker_port = 1883
 responsePacket = ''
 response2 = ''
-INTERNAL_DATABASE_NAME = "mansoura"
+INTERNAL_DATABASE_NAME = "Freezers"
 INTERNAL_BACKUP_DATABASE_NAME = "Hold"
 USERNAME_DATABASE = "skarpt"
 PASSWORD_DATABASE = "skarpt"
-DATABASE_IP = '192.168.0.149'
+DATABASE_IP = '192.168.0.107'
 measurement = "Tzone"
 DATABASE_PORT='8086'
 
@@ -409,5 +409,5 @@ class EchoServer(asyncore.dispatcher):
         handler = EchoHandler(sock)
 
 
-server = EchoServer('', 2000)
+server = EchoServer('', 3000)
 asyncore.loop()
