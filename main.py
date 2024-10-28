@@ -26,6 +26,8 @@ print("Backup DB Name:", INTERNAL_BACKUP_DATABASE_NAME)
 print("Internal DB Name:", INTERNAL_DATABASE_NAME)
 print("Database IP:", DATABASE_IP)
 print("Measurement:", measurement)
+
+
 def Update_ACK(Packetindex):
     global responsePacket, response2
     # str = '@CMD,*000000,@ACK,'+Packetindex+'#,#'
@@ -35,6 +37,8 @@ def Update_ACK(Packetindex):
     response2 = "Server UTC time:" + str(datetime.now())[:19]
     response2 = response2.encode('utf-8')
     response2 = response2.hex()
+
+
 def ConvertRTCtoTime(RTC):
     Year, Month, Day, Hours, Min, Sec = RTC[0:2], RTC[2:4], RTC[4:6], RTC[6:8], RTC[8:10], RTC[10:12]
     Year, Month, Day, Hours, Min, Sec = int(Year, 16), int(Month, 16), int(Day, 16), int(Hours, 16), int(Min, 16), int(
@@ -45,6 +49,7 @@ def ConvertRTCtoTime(RTC):
     Time = str(Hours) + "/" + str(Min) + "/" + str(Sec)
     # return  Year, Month, Day, Hours, Min, Sec
     return Date, Time
+
 
 def TempFun(temp):
     sign = ''
@@ -87,17 +92,24 @@ def HumFun(hum):
         return "Sensor error"
     return str(int(value, 2))
 
-def Save_IndexNum(index) :
+
+def Save_IndexNum(index):
     textfile = open("IndexNum.txt", "w")
-    textfile.write(str (index))
+    textfile.write(str(index))
     textfile.close()
-def Load_IndexNum () :
+
+
+def Load_IndexNum():
     text_file = open("IndexNum.txt", "r")
     lines = text_file.readlines()
-    Nlist = [i.replace("\n","").strip() for i in lines ]
-    return int (Nlist[0])
-def Set_IndexNumber () :
+    Nlist = [i.replace("\n", "").strip() for i in lines]
+    return int(Nlist[0])
+
+
+def Set_IndexNumber():
     Save_IndexNum(0)
+
+
 def BuildJsonDataBase(Date, Time, Temp, Hum, Battery, GateWayID, SensorID):
     listofdate = Date.split("/")
     Year, Month, day = listofdate
@@ -122,8 +134,8 @@ def BuildJsonDataBase(Date, Time, Temp, Hum, Battery, GateWayID, SensorID):
     ]
     return JsonData
 
-def SendToInternalDataBase(dectionarylist):
 
+def SendToInternalDataBase(dectionarylist):
     client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_DATABASE_NAME)
     for i in dectionarylist:
         DataPoint = BuildJsonDataBase(i["Date"], i["Time"], i["temperature"], i["humidity"], i["SensorBattary"],
@@ -141,19 +153,20 @@ def SendToInternalDataBase(dectionarylist):
 #                                       i["GatewayId"], i["Sensorid"])
 #         client.write_points(DataPoint)
 #     del dectionarylist
-def SendPacketHoldingDataBase(packet) :
+def SendPacketHoldingDataBase(packet):
     from influxdb import InfluxDBClient
-    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_BACKUP_DATABASE_NAME)
+    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE,
+                            INTERNAL_BACKUP_DATABASE_NAME)
     try:
         index = Load_IndexNum()
-    except :
+    except:
         Set_IndexNumber()
-        index =Load_IndexNum()
+        index = Load_IndexNum()
 
     DataPoint = [
         {
             "measurement": measurement,
-            "tags" : {
+            "tags": {
                 "id": index
             },
             "fields": {
@@ -164,6 +177,8 @@ def SendPacketHoldingDataBase(packet) :
     index += 1
     Save_IndexNum(index)
     client.write_points(DataPoint)
+
+
 def ConvertSensorsToReadings(GatwayId, date, time, GatewayBattary, GatewayPower, NumberOfSensors, Sensorhexlist):
     sensor_id_list = []
     sensor_temp_list = []
@@ -193,7 +208,6 @@ def ConvertSensorsToReadings(GatwayId, date, time, GatewayBattary, GatewayPower,
     SendToInternalDataBase(dectionarylist)
 
     del jsonname, jsonlist, sensor_id_list, sensor_temp_list, sensor_hum_list, sensor_battary_list, GatwayId, date, time, GatewayBattary, GatewayPower, NumberOfSensors, Sensorhexlist
-
 
 
 def ConvertPacketIntoElemets(packet):
@@ -232,6 +246,7 @@ def ConvertPacketIntoElemets(packet):
     SendPacketHoldingDataBase(packet)
     ConvertSensorsToReadings(GatwayId, date, time, GatewayBattary, GatewayPower, NumberOfSensors, Sensorhexlist)
 
+
 def check_packet(data):
     return True
     check_code = data[-8:- 4]
@@ -245,34 +260,35 @@ def check_packet(data):
     else:
         return False
 
+
 def preprocess_packet(data):
-    global full_packet_list
+    try:
+        global full_packet_list
 
-    data = str(binascii.hexlify(data).decode())
-    print(data)
-    data = data.strip()
-    if data.startswith("545a") and data.endswith("0d0a"):
-        full_packet_list = []
-        if check_packet(data):
-            ConvertPacketIntoElemets(data)
-        return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
-    elif data.endswith("0d0a") and not data.startswith("545a") and full_packet_list:
-        collecting_packet = ''
-        for packet_part in full_packet_list:
-            collecting_packet += packet_part
-        collecting_packet += data
-        if check_packet(collecting_packet):
-            ConvertPacketIntoElemets(collecting_packet)
-        full_packet_list = []
-        return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
-    else:
-        full_packet_list.append(data)
+        data = str(binascii.hexlify(data).decode())
+        print(data)
+        data = data.strip()
+        if data.startswith("545a") and data.endswith("0d0a"):
+            full_packet_list = []
+            if check_packet(data):
+                ConvertPacketIntoElemets(data)
+            return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
+        elif data.endswith("0d0a") and not data.startswith("545a") and full_packet_list:
+            collecting_packet = ''
+            for packet_part in full_packet_list:
+                collecting_packet += packet_part
+            collecting_packet += data
+            if check_packet(collecting_packet):
+                ConvertPacketIntoElemets(collecting_packet)
+            full_packet_list = []
+            return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
 
-    return 0
+        else:
+            full_packet_list.append(data)
 
-
-
-
+        return 0
+    except:
+        pass
 
 
 class EchoHandler(asyncore.dispatcher_with_send):
@@ -298,10 +314,10 @@ class EchoHandler(asyncore.dispatcher_with_send):
         if data:
             try:
                 send_list = preprocess_packet(data)
-                if send_list != 0 :
-                    for i in send_list :
+                if send_list != 0:
+                    for i in send_list:
                         self.send(i)
-            except :
+            except:
                 pass
 
 
