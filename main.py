@@ -23,22 +23,22 @@ broker_address = "192.168.1.123"
 broker_port = 1883
 responsePacket = ''
 response2 = ''
-INTERNAL_DATABASE_NAME = "mostord"
-INTERNAL_BACKUP_DATABASE_NAME = "Hold"
-USERNAME_DATABASE = "skarpt2"
-PASSWORD_DATABASE = "skarpt"
-DATABASE_IP = '192.168.1.100'
-measurement = "Tzone"
-DATABASE_PORT='8086'
+# INTERNAL_DATABASE_NAME = "mostord"
+# INTERNAL_BACKUP_DATABASE_NAME = "Hold"
+# USERNAME_DATABASE = "skarpt2"
+# PASSWORD_DATABASE = "skarpt"
+# DATABASE_IP = '192.168.1.100'
+# measurement = "Tzone"
+# DATABASE_PORT='8086'
 
-# with open('/data/options.json', 'r') as config_file:    config = json.load(config_file)
-# DATABASE_PORT = config.get('database_port', '8086')  # Default to '8086' if not set
-# USERNAME_DATABASE = config.get('username_database', 'default_username')
-# PASSWORD_DATABASE = config.get('password_database', 'default_password')
-# INTERNAL_BACKUP_DATABASE_NAME = config.get('internal_backup_database_name', 'default_backup_db')
-# INTERNAL_DATABASE_NAME = config.get('internal_database_name', 'default_internal_db')
-# DATABASE_IP = config.get('database_ip', '127.0.0.1')
-# measurement = config.get('measurement', 'default_measurement')
+with open('/data/options.json', 'r') as config_file:    config = json.load(config_file)
+DATABASE_PORT = config.get('database_port', '8086')  # Default to '8086' if not set
+USERNAME_DATABASE = config.get('username_database', 'default_username')
+PASSWORD_DATABASE = config.get('password_database', 'default_password')
+INTERNAL_BACKUP_DATABASE_NAME = config.get('internal_backup_database_name', 'default_backup_db')
+INTERNAL_DATABASE_NAME = config.get('internal_database_name', 'default_internal_db')
+DATABASE_IP = config.get('database_ip', '127.0.0.1')
+measurement = config.get('measurement', 'default_measurement')
 
 def ConvertKSA(packet):
     hour = packet[46:48]
