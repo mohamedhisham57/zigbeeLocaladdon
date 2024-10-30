@@ -152,9 +152,9 @@ def Update_ACK(Packetindex):
     global responsePacket, response2
     # str = '@CMD,*000000,@ACK,'+Packetindex+'#,#'
     str1 = '@ACK,' + Packetindex + '#'
-    print("ack = " + str1)
+    print("ack = " , str1)
     str1 = str1.encode('utf-8')
-    print("Ack encode = "+ str1 )
+    print("Ack encode = ", str1 )
     responsePacket = str1.hex()
     response2 = "Server UTC time:" + str(datetime.now())[:19]
     response2 = response2.encode('utf-8')
