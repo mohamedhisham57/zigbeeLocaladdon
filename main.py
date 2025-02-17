@@ -12,44 +12,50 @@ try:
     with open(CONFIG_FILE, "r") as f:
         config = json.load(f)
 except FileNotFoundError:
-    print("❌ Configuration file not found, using defaults.")
+    print("❌ Configuration file not found! Please check your Add-on settings.")
     config = {}
 
-# InfluxDB Configuration (Loaded from config)
-# INFLUXDB_HOST = config.get("influxdb_host", "192.168.0.127")
-# INFLUXDB_PORT = config.get("influxdb_port", 8086)
-# INFLUXDB_USER = config.get("influxdb_user", "skarpt")
-# INFLUXDB_PASSWORD = config.get("influxdb_password", "skarpt")
-# INFLUXDB_DBNAME = config.get("influxdb_dbname", "Skarpt")
+# *Load InfluxDB Configuration from UI*
+INFLUXDB_HOST = config.get("influxdb_host", "")
+INFLUXDB_PORT = config.get("influxdb_port", 8086)
+INFLUXDB_USER = config.get("influxdb_user", "")
+INFLUXDB_PASSWORD = config.get("influxdb_password", "")
+INFLUXDB_DBNAME = config.get("influxdb_dbname", "")
 
-# API Server details (Loaded from config)
-# LOGIN_URI = config.get("login_uri", "https://iot.skarpt.net/java_bk/login")
-# ADD_READINGS_URI = config.get("add_readings_uri", "https://iot.skarpt.net/java_bk/reports/addReadingsList")
+# *Load API Configuration from UI*
+LOGIN_URI = config.get("login_uri", "")
+ADD_READINGS_URI = config.get("add_readings_uri", "")
+USERNAME = config.get("username", "")
+PASSWORD = config.get("password", "")
 TOKEN = ""
 
-# Sensor IDs (Loaded from config)
-# SENSOR_IDS = config.get("sensor_ids", ["97654321", "87654321", "99765432"])
+# *Load Sensor IDs from UI*
+SENSOR_IDS = config.get("sensor_ids", [])
 
-# Store last known humidity values & timestamps for each sensor
+# *Warn if No Sensors Are Configured*
+if not SENSOR_IDS:
+    print("⚠ No sensors configured! Please enter sensor IDs in the Add-on settings.")
+
+# *Store last known humidity values & timestamps for each sensor*
 LAST_HUMIDITY = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_TEMP_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_HUMIDITY_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 
-# Connect to InfluxDB
-client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
+# *Connect to InfluxDB AFTER Loading Configuration*
+try:
+    client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
+    print(f"✅ Connected to InfluxDB: {INFLUXDB_HOST}:{INFLUXDB_PORT}")
+except Exception as e:
+    print(f"❌ Failed to connect to InfluxDB: {e}")
 
-# Authentication Credentials (Loaded from config)
-USERNAME = config.get("username", "demo@skarpt.net")
-PASSWORD = config.get("password", "Demo@2021")
 
-
-# Function to get current date and time
+# *Function to get current date and time*
 def get_current_date_time():
     now = datetime.now()
     return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
 
 
-# Function to log in and retrieve a token
+# *Function to log in and retrieve a token*
 def login():
     global TOKEN
     basic_auth = f"{USERNAME}:{PASSWORD}"
@@ -67,7 +73,7 @@ def login():
         print(f"❌ Login request failed: {e}")
 
 
-# Function to send data to cloud
+# *Function to send data to cloud*
 def send_json_to_server(json_object):
     global TOKEN
     if not TOKEN:
@@ -87,7 +93,7 @@ def send_json_to_server(json_object):
         return False
 
 
-# Function to fetch the latest temperature and humidity for a given sensor
+# *Function to fetch the latest temperature and humidity for a given sensor*
 def fetch_latest_sensor_data(sensor_id):
     global LAST_HUMIDITY  # Track last known humidity value
 
@@ -115,7 +121,7 @@ def fetch_latest_sensor_data(sensor_id):
         # Fetch Humidity Data
         humidity_result = client.query(humidity_query)
         humidity_points = list(humidity_result.get_points())
-        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY[sensor_id]
+        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY.get(sensor_id, None)
         humidity_timestamp = humidity_points[0]["time"] if humidity_points else None  # Humidity timestamp
 
         # Update last known humidity
@@ -129,7 +135,7 @@ def fetch_latest_sensor_data(sensor_id):
         return None, None, None, None
 
 
-# Function to listen for new sensor updates for all sensors
+# *Function to listen for new sensor updates for all sensors*
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
 
@@ -138,8 +144,8 @@ def listen_for_new_data():
             latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
 
             # *Check if temperature changed*
-            temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP[sensor_id]
-            humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP[sensor_id]
+            temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP.get(sensor_id, None)
+            humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP.get(sensor_id, None)
 
             # If *either timestamp* is new, process the data
             if temp_changed or humidity_changed:
@@ -154,7 +160,7 @@ def listen_for_new_data():
                 current_date, current_time = get_current_date_time()
 
                 json_object = {
-                    "GatewayId": '87654321',  # Use sensor ID as Gateway ID
+                    "GatewayId": sensor_id,  # Use sensor ID as Gateway ID
                     "Date": current_date,
                     "Time": current_time,
                     "data": [
@@ -171,5 +177,5 @@ def listen_for_new_data():
         time.sleep(2)  # Small delay to avoid excessive queries
 
 
-# Start listening for updates
+# *Start listening for updates*
 listen_for_new_data()
