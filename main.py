@@ -31,8 +31,8 @@ ADD_READINGS_URI = config.get("add_readings_uri", "")
 USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
 
-# Load Sensor IDs
-SENSOR_IDS = config.get("SENSOR_IDS", [])
+# ✅ *Correctly Load Sensor IDs*
+SENSOR_IDS = config.get("sensor_ids", [])  # 🟢 FIXED: Use "sensor_ids", NOT "SENSOR_IDS"
 
 # Debugging: Print the loaded sensor IDs
 print("📡 Sensor IDs Loaded:", SENSOR_IDS)
@@ -54,16 +54,13 @@ except Exception as e:
     print(f"❌ Failed to connect to InfluxDB: {e}")
     exit(1)  # Exit if InfluxDB connection fails
 
-
 # Function to get current date and time
 def get_current_date_time():
     now = datetime.now()
     return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
 
-
 # Function to log in and retrieve a token
 TOKEN = ""
-
 
 def login():
     global TOKEN
@@ -84,7 +81,6 @@ def login():
             print(f"❌ Login failed: {response.status_code} - {response.text}")
     except requests.RequestException as e:
         print(f"❌ Login request failed: {e}")
-
 
 # Function to send data to cloud
 def send_json_to_server(json_object):
@@ -108,7 +104,6 @@ def send_json_to_server(json_object):
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
         return False
-
 
 # Function to fetch the latest temperature and humidity for a given sensor
 def fetch_latest_sensor_data(sensor_id):
@@ -151,7 +146,6 @@ def fetch_latest_sensor_data(sensor_id):
         print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
         return None, None, None, None
 
-
 # Function to listen for new sensor updates for all sensors
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
@@ -192,7 +186,6 @@ def listen_for_new_data():
                 send_json_to_server(json_object)  # Send data to cloud
 
         time.sleep(2)  # Small delay to avoid excessive queries
-
 
 # Start listening for updates
 listen_for_new_data()
