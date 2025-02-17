@@ -2,27 +2,45 @@ import json
 import base64
 import requests
 import time
+import os
 from datetime import datetime
 from influxdb import InfluxDBClient
 
-# InfluxDB Configuration
-INFLUXDB_HOST = "192.168.0.127"  # Replace with Home Assistant IP
-INFLUXDB_PORT = 8086
-INFLUXDB_USER = "skarpt"
-INFLUXDB_PASSWORD = "skarpt"
-INFLUXDB_DBNAME = "Skarpt"
+# Load Configuration from Home Assistant Add-on Options
+CONFIG_FILE = "/data/options.json"
+try:
+    with open(CONFIG_FILE, "r") as f:
+        config = json.load(f)
+except FileNotFoundError:
+    print("❌ Configuration file not found, using defaults.")
+    config = {}
 
-# API Server details
-login_uri = 'https://iot.skarpt.net/java_bk/login'
-add_readings_uri = 'https://iot.skarpt.net/java_bk/reports/addReadingsList'
-token = ""
+# InfluxDB Configuration (Loaded from config)
+# INFLUXDB_HOST = config.get("influxdb_host", "192.168.0.127")
+# INFLUXDB_PORT = config.get("influxdb_port", 8086)
+# INFLUXDB_USER = config.get("influxdb_user", "skarpt")
+# INFLUXDB_PASSWORD = config.get("influxdb_password", "skarpt")
+# INFLUXDB_DBNAME = config.get("influxdb_dbname", "Skarpt")
+
+# API Server details (Loaded from config)
+# LOGIN_URI = config.get("login_uri", "https://iot.skarpt.net/java_bk/login")
+# ADD_READINGS_URI = config.get("add_readings_uri", "https://iot.skarpt.net/java_bk/reports/addReadingsList")
+TOKEN = ""
+
+# Sensor IDs (Loaded from config)
+# SENSOR_IDS = config.get("sensor_ids", ["97654321", "87654321", "99765432"])
+
+# Store last known humidity values & timestamps for each sensor
+LAST_HUMIDITY = {sensor_id: None for sensor_id in SENSOR_IDS}
+LAST_TEMP_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
+LAST_HUMIDITY_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 
 # Connect to InfluxDB
 client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
 
-# Authentication Credentials
-USERNAME = "demo@skarpt.net"  # Replace with actual username
-PASSWORD = "Demo@2021"  # Replace with actual password
+# Authentication Credentials (Loaded from config)
+USERNAME = config.get("username", "demo@skarpt.net")
+PASSWORD = config.get("password", "Demo@2021")
 
 
 # Function to get current date and time
@@ -33,88 +51,125 @@ def get_current_date_time():
 
 # Function to log in and retrieve a token
 def login():
-    global token
+    global TOKEN
     basic_auth = f"{USERNAME}:{PASSWORD}"
     encoded_u = base64.b64encode(basic_auth.encode()).decode()
     headers = {"Authorization": f"Basic {encoded_u}"}
 
     try:
-        response = requests.get(login_uri, headers=headers, verify=False)
+        response = requests.get(LOGIN_URI, headers=headers, verify=False, timeout=5)
         if response.status_code == 200:
-            token = response.json()['entity'][0]['token']
-            print("Token acquired")
+            TOKEN = response.json().get('entity', [{}])[0].get('token', "")
+            print("✅ Token acquired successfully")
         else:
-            print("Login failed:", response.text)
-    except Exception as e:
-        print("Login request failed:", e)
+            print(f"❌ Login failed: {response.status_code} - {response.text}")
+    except requests.RequestException as e:
+        print(f"❌ Login request failed: {e}")
 
 
 # Function to send data to cloud
 def send_json_to_server(json_object):
-    global token
-    if not token:
+    global TOKEN
+    if not TOKEN:
         login()
 
-    headers = {"token": token}
+    headers = {"token": TOKEN}
     try:
-        response = requests.post(add_readings_uri, headers=headers, json=json_object, verify=False)
+        response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
         if response.status_code == 200:
-            print("Data successfully sent")
+            print("✅ Data successfully sent")
             return True
         else:
-            print("Failed to send data:", response.status_code, response.text)
+            print(f"❌ Failed to send data: {response.status_code} {response.text}")
             return False
-    except Exception as e:
-        print("Error sending data to server:", e)
+    except requests.RequestException as e:
+        print(f"❌ Error sending data to server: {e}")
         return False
 
 
-# Function to fetch data from InfluxDB and send to cloud
-def fetch_from_influxdb():
+# Function to fetch the latest temperature and humidity for a given sensor
+def fetch_latest_sensor_data(sensor_id):
+    global LAST_HUMIDITY  # Track last known humidity value
+
+    # Query for latest temperature
+    temp_query = f'''
+    SELECT last("value") AS temperature, time 
+    FROM "Skarpt"."autogen"."°C" 
+    WHERE "entity_id" = '{sensor_id}_temperature'
+    '''
+
+    # Query for latest humidity
+    humidity_query = f'''
+    SELECT last("value") AS humidity, time 
+    FROM "Skarpt"."autogen"."%" 
+    WHERE "entity_id" = '{sensor_id}_humidity'
+    '''
+
+    try:
+        # Fetch Temperature Data
+        temp_result = client.query(temp_query)
+        temp_points = list(temp_result.get_points())
+        temperature = temp_points[0]["temperature"] if temp_points else None
+        temp_timestamp = temp_points[0]["time"] if temp_points else None  # Temperature timestamp
+
+        # Fetch Humidity Data
+        humidity_result = client.query(humidity_query)
+        humidity_points = list(humidity_result.get_points())
+        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY[sensor_id]
+        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None  # Humidity timestamp
+
+        # Update last known humidity
+        if humidity_points:
+            LAST_HUMIDITY[sensor_id] = humidity
+
+        return temperature, humidity, temp_timestamp, humidity_timestamp
+
+    except Exception as e:
+        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
+        return None, None, None, None
+
+
+# Function to listen for new sensor updates for all sensors
+def listen_for_new_data():
+    print("🔄 Listening for new sensor updates...")
+
     while True:
-        print("Fetching data from InfluxDB...")
-        query = '''
-        SELECT "value", time
-        FROM "autogen"."°C"
-        WHERE time > now() - 10s
-        ORDER BY time DESC
-        '''
+        for sensor_id in SENSOR_IDS:
+            latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
 
-        try:
-            result = client.query(query)
-        except Exception as e:
-            print("InfluxDB query failed:", e)
-            time.sleep(10)
-            continue
+            # *Check if temperature changed*
+            temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP[sensor_id]
+            humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP[sensor_id]
 
-        current_date, current_time = get_current_date_time()
+            # If *either timestamp* is new, process the data
+            if temp_changed or humidity_changed:
+                print(f"📢 New sensor reading detected: {sensor_id} | {latest_temperature}°C, {latest_humidity}% at {temp_timestamp if temp_changed else humidity_timestamp}")
 
-        json_object = {
-            "GatewayId": "87654321",  # Fixed Gateway ID
-            "GatewayBattery": 95,
-            "GatewayPower": 3.2,
-            "Date": current_date,
-            "Time": current_time,
-            "data": []
-        }
+                # *Update timestamps individually*
+                if temp_changed:
+                    LAST_TEMP_TIMESTAMP[sensor_id] = temp_timestamp
+                if humidity_changed:
+                    LAST_HUMIDITY_TIMESTAMP[sensor_id] = humidity_timestamp
 
-        # Loop through all data points retrieved from InfluxDB
-        for point in result.get_points():
-            temperature = point["value"]  # Get the real temperature value
+                current_date, current_time = get_current_date_time()
 
-            json_object["data"].append({
-                "Sensorid": "87654321",  # Fixed Sensor ID
-                "humidity": 54,  # If humidity data is available, replace None with its value
-                "temperature": temperature
-            })
+                json_object = {
+                    "GatewayId": '87654321',  # Use sensor ID as Gateway ID
+                    "Date": current_date,
+                    "Time": current_time,
+                    "data": [
+                        {
+                            "Sensorid": sensor_id,  # Use sensor ID as Sensor ID
+                            "humidity": latest_humidity if latest_humidity is not None else 0,
+                            "temperature": latest_temperature if latest_temperature is not None else 0
+                        }
+                    ]
+                }
 
-        if json_object["data"]:
-            send_json_to_server(json_object)
-        else:
-            print("No new data found")
+                send_json_to_server(json_object)  # Send data to cloud
 
-        time.sleep(10)
+        time.sleep(2)  # Small delay to avoid excessive queries
 
 
-# Start fetching data from InfluxDB
-fetch_from_influxdb()
+# Start listening for updates
+listen_for_new_data()
