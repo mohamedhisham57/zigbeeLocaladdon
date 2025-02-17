@@ -3,6 +3,7 @@ import base64
 import requests
 import time
 import os
+import re
 from datetime import datetime
 from influxdb import InfluxDBClient
 
@@ -31,14 +32,17 @@ ADD_READINGS_URI = config.get("add_readings_uri", "")
 USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
 
-# ✅ *Correctly Load Sensor IDs*
-SENSOR_IDS = config.get("SENSOR_IDS", [])  # 🟢 FIXED: Use "sensor_ids", NOT "SENSOR_IDS"
+# ✅ Read sensor IDs as a *single comma-separated string* and split into 8-digit IDs
+sensor_ids_str = config.get("sensor_ids", "")
+
+# ✅ Extract only valid 8-digit numeric sensor IDs using regex
+SENSOR_IDS = re.findall(r"\b\d{8}\b", sensor_ids_str)
 
 # Debugging: Print the loaded sensor IDs
 print("📡 Sensor IDs Loaded:", SENSOR_IDS)
 
 if not SENSOR_IDS:
-    print("⚠ No sensors configured! Please enter sensor IDs in the Add-on settings.")
+    print("⚠ No valid sensors configured! Please enter valid 8-digit sensor IDs in the Add-on settings.")
     exit(1)  # Exit script if no sensors are configured
 
 # Ensure SENSOR_IDS is loaded before using
@@ -171,7 +175,7 @@ def listen_for_new_data():
                 current_date, current_time = get_current_date_time()
 
                 json_object = {
-                    "GatewayId": sensor_id,  # Use sensor ID as Gateway ID
+                    "GatewayId": '87654321',  # Use sensor ID as Gateway ID
                     "Date": current_date,
                     "Time": current_time,
                     "data": [
