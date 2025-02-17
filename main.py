@@ -1,364 +1,120 @@
-import asyncore
-import binascii
 import json
-import threading
+import base64
+import requests
+import time
 from datetime import datetime
-import paho.mqtt.client as mqtt
-import socket
-from datetime import date
-
 from influxdb import InfluxDBClient
-# import PyCRC
-# from PyCRC.crc import CRC
 
-#from influxdb_client import InfluxDBClient, Point, WritePrecision #Token
-#from influxdb_client.client.write_api import SYNCHRONOUS #Token
-full_packet_list = []
-ServerActive = True
-Serverip = '185.222.242.249'
-Serverport = 5029
-broker_address = "192.168.0.100"
-broker_port = 1883
-responsePacket = ''
-response2 = ''
-#INTERNAL_DATABASE_NAME = "example"
-#INTERNAL_BACKUP_DATABASE_NAME = "Hold"
-#USERNAME_DATABASE = "home"
-#PASSWORD_DATABASE = "home"
-#DATABASE_IP = '192.168.0.100'
-#measurement = "Tzone"
+# InfluxDB Configuration
+INFLUXDB_HOST = "192.168.0.127"  # Replace with Home Assistant IP
+INFLUXDB_PORT = 8086
+INFLUXDB_USER = "skarpt"
+INFLUXDB_PASSWORD = "skarpt"
+INFLUXDB_DBNAME = "Skarpt"
 
-with open('/data/options.json', 'r') as config_file:    config = json.load(config_file)
-DATABASE_PORT = config.get('database_port', '8086')  # Default to '8086' if not set
-USERNAME_DATABASE = config.get('username_database', 'default_username')
-PASSWORD_DATABASE = config.get('password_database', 'default_password')
-INTERNAL_BACKUP_DATABASE_NAME = config.get('internal_backup_database_name', 'default_backup_db')
-INTERNAL_DATABASE_NAME = config.get('internal_database_name', 'default_internal_db')
-DATABASE_IP = config.get('database_ip', '127.0.0.1')
-measurement = config.get('measurement', 'default_measurement')
+# API Server details
+login_uri = 'https://iot.skarpt.net/java_bk/login'
+add_readings_uri = 'https://iot.skarpt.net/java_bk/reports/addReadingsList'
+token = ""
+
+# Connect to InfluxDB
+client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
+
+# Authentication Credentials
+USERNAME = "demo@skarpt.net"  # Replace with actual username
+PASSWORD = "Demo@2021"  # Replace with actual password
 
 
-def ConvertKSA (packet) :
-    hour = packet[46:48]
-    print(int(hour, 16))
-    newtime = str(hex(int(hour, 16) + 1)).replace("0x", "")
-    if len(newtime) == 1:
-        newtime = "0" + newtime
-    newpacket = packet[:46] + newtime + packet[48:]
-    return newpacket
-def Checked_SavedHolding_Database():
-    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_BACKUP_DATABASE_NAME)
-    result = client.query('SELECT *  FROM '+str(INTERNAL_BACKUP_DATABASE_NAME)+'."autogen".'+str(measurement))
-    length = len(list(result.get_points()))
-    if length != 0 :
-        return True
-    else:
-        return False
-def Send_Saved_Database ():
-    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_BACKUP_DATABASE_NAME)
-    result = client.query('SELECT *  FROM '+str(INTERNAL_BACKUP_DATABASE_NAME)+'."autogen".'+str(measurement))
-    data = list(result.get_points())
-    for point in data :
-        SendPacketToServer(str(point["Packet"]))
-        client.delete_series(database=INTERNAL_BACKUP_DATABASE_NAME, measurement=measurement, tags={"id":point["id"]})
-def Save_IndexNum(index) :
-    textfile = open("IndexNum.txt", "w")
-    textfile.write(str (index))
-    textfile.close()
-def Load_IndexNum () :
-    text_file = open("IndexNum.txt", "r")
-    lines = text_file.readlines()
-    Nlist = [i.replace("\n","").strip() for i in lines ]
-    return int (Nlist[0])
-def Set_IndexNumber () :
-    Save_IndexNum(0)
-def SendPacketHoldingDataBase(packet) :
-    from influxdb import InfluxDBClient
-    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT, USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_BACKUP_DATABASE_NAME)
+# Function to get current date and time
+def get_current_date_time():
+    now = datetime.now()
+    return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
+
+
+# Function to log in and retrieve a token
+def login():
+    global token
+    basic_auth = f"{USERNAME}:{PASSWORD}"
+    encoded_u = base64.b64encode(basic_auth.encode()).decode()
+    headers = {"Authorization": f"Basic {encoded_u}"}
+
     try:
-        index = Load_IndexNum()
-    except :
-        Set_IndexNumber()
-        index =Load_IndexNum()
+        response = requests.get(login_uri, headers=headers, verify=False)
+        if response.status_code == 200:
+            token = response.json()['entity'][0]['token']
+            print("Token acquired")
+        else:
+            print("Login failed:", response.text)
+    except Exception as e:
+        print("Login request failed:", e)
 
-    DataPoint = [
-        {
-            "measurement": measurement,
-            "tags" : {
-                "id": index
-            },
-            "fields": {
-                "Packet": packet
-            }
-        }
-    ]
-    index += 1
-    Save_IndexNum(index)
-    client.write_points(DataPoint)
-def SendPacketToServer (packet) :
-    packet = ConvertKSA(packet)
-    if ServerActive:
+
+# Function to send data to cloud
+def send_json_to_server(json_object):
+    global token
+    if not token:
+        login()
+
+    headers = {"token": token}
+    try:
+        response = requests.post(add_readings_uri, headers=headers, json=json_object, verify=False)
+        if response.status_code == 200:
+            print("Data successfully sent")
+            return True
+        else:
+            print("Failed to send data:", response.status_code, response.text)
+            return False
+    except Exception as e:
+        print("Error sending data to server:", e)
+        return False
+
+
+# Function to fetch data from InfluxDB and send to cloud
+def fetch_from_influxdb():
+    while True:
+        print("Fetching data from InfluxDB...")
+        query = '''
+        SELECT "value", time
+        FROM "autogen"."°C"
+        WHERE time > now() - 10s
+        ORDER BY time DESC
+        '''
+
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((Serverip, Serverport))
-            s.send(binascii.unhexlify(packet))
-        except:
-            print("server " + Serverip + "error")
-def TestServerConnection () : #return network status
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((Serverip, Serverport))
-        s.send(binascii.unhexlify("00"))
-        return True
-    except:
-        return False
-def mqttsend (jsonlist,sensoridlist) :
-    print("creating new instance")
-    client = mqtt.Client("P1")  # create new instance
-    print("connecting to broker")
-    client.connect(broker_address ,broker_port)  # connect to broker
-    #client.username_pw_set(username="homeassistant", password="yayeeheed8eezaechiwu4thahbaij2eiki0eim8Bo1chahbatief4Ohs1mait0Ph")
-    #client.subscribe("LastAttendance")
-    for i in range(len(jsonlist)):
-        client.publish(measurement+"/" + str(sensoridlist[i]), str(jsonlist[i]))
-def Update_ACK (Packetindex) :
-    global  responsePacket,response2
-    #str = '@CMD,*000000,@ACK,'+Packetindex+'#,#'
-    str1 = '@ACK,'+Packetindex+'#'
-    str1 = str1.encode('utf-8')
-    responsePacket = str1.hex()
-    response2 = "Server UTC time:"+str(datetime.now())[:19]
-    response2 = response2.encode('utf-8')
-    response2 = response2.hex()
-def ConvertRTCtoTime(RTC) :
-    Year,Month,Day,Hours,Min,Sec = RTC[0:2],RTC[2:4],RTC[4:6],RTC[6:8],RTC[8:10],RTC[10:12]
-    Year, Month, Day, Hours, Min, Sec =int(Year, 16),int(Month, 16),int(Day, 16),int(Hours, 16),int(Min, 16),int(Sec, 16)
-    print("Date is ",Year,"/",Month,"/",Day)
-    print("Time is ",Hours,"/",Min,"/",Sec)
-    Date = str (Year)+"/"+str (Month) + "/"+str (Day)
-    Time = str (Hours)+"/"+str (Min) + "/"+str (Sec)
-    #return  Year, Month, Day, Hours, Min, Sec
-    return  Date,Time
-def TempFun ( temp) :
-    sign = ''
-    hexadecimal = temp
-    end_length = len(hexadecimal) * 4
-    hex_as_int = int(hexadecimal, 16)
-    hex_as_binary = bin(hex_as_int)
-    padded_binary = hex_as_binary[2:].zfill(end_length)
-    normalbit = padded_binary[0]
-    postitive = padded_binary[1]
-    value = padded_binary[2:]
-    if str (normalbit) == '0' :
-        pass
-    else:
-        return 255
+            result = client.query(query)
+        except Exception as e:
+            print("InfluxDB query failed:", e)
+            time.sleep(10)
+            continue
 
-    if str (postitive) == '0':
-        sign = '+'
-    else:
-        sign = '-'
+        current_date, current_time = get_current_date_time()
 
-    if sign == '+' :
-        return str(int(value, 2)/10)
-
-    else:
-        return "-" + str(int(value, 2)/10)
-def HumFun ( hum) :
-    hexadecimal = hum
-    end_length = len(hexadecimal) * 4
-    hex_as_int = int(hexadecimal, 16)
-    hex_as_binary = bin(hex_as_int)
-    padded_binary = hex_as_binary[2:].zfill(end_length)
-    normalbit = padded_binary[0]
-    value = padded_binary[1:]
-    if str (normalbit) == '0':
-        pass
-    else:
-        return 255
-    return str(int(value, 2))
-def ConvertPacketIntoElemets (packet) :
-    if TestServerConnection() :
-        if Checked_SavedHolding_Database() :
-            threading.Thread(target=Send_Saved_Database, args=[]).start()
-        SendPacketToServer(packet)
-    else:
-        SendPacketHoldingDataBase(packet)
-    sensorfound = False
-    NumberOfSensors = 0
-    Sensorhexlist = []
-    Packetindex = packet[-12:-8]
-    print(Packetindex)
-    Update_ACK(str ( int(Packetindex, 16)))
-    Packetsensorlength = packet[76:80]
-    if Packetsensorlength == "0000":
-        return 0
-    if int(Packetsensorlength, 16) != 0:
-        sensorfound = True
-        NumberOfSensors = packet[82:84]
-        NumberOfSensors = int(NumberOfSensors, 16)
-        print("Number Of Sensors", NumberOfSensors, "Sensor")
-        result = 0
-        for i in range(NumberOfSensors):
-            i =i +result
-            Sensorhexlist.append(packet[86+i:108+i])
-            result+=21
-    GatwayId = packet[24:40]
-    print(GatwayId)
-    RTC = packet[40:52]
-    date,time = ConvertRTCtoTime(RTC)
-    GatewayBattary = packet[68 :72 ]
-    GatewayBattary = int(GatewayBattary, 16)/100
-    print("Battary of Gateway ", GatewayBattary, "Volt")
-    GatewayPower = packet[72 :76 ]
-    GatewayPower = int(GatewayPower, 16)/100
-    print("Power of Gateway ",GatewayPower, "Volt")
-    print(sensorfound,NumberOfSensors,Sensorhexlist)
-    ConvertSensorsToReadings(GatwayId,date,time,GatewayBattary,GatewayPower,NumberOfSensors,Sensorhexlist)
-def ConvertSensorsToReadings (GatwayId,date,time,GatewayBattary,GatewayPower,NumberOfSensors,Sensorhexlist) :
-    sensor_id_list = []
-    sensor_temp_list = []
-    sensor_hum_list = []
-    sensor_battary_list = []
-    jsonlist = []
-    dectionarylist = []
-    for packet in Sensorhexlist :
-        sensor_id_list.append(packet[0:8])
-        sensor_battary_list.append(int(packet[10:14], 16)/1000)
-        sensor_temp_list.append(TempFun(packet[14:18]))
-        sensor_hum_list.append(HumFun(packet[18:20]))
-    print(sensor_id_list)
-    print(sensor_temp_list)
-    print(sensor_hum_list)
-    print(sensor_battary_list)
-    for index in range(NumberOfSensors) :
-        jsonname = {"GatewayId": GatwayId,"GatewayBattary": GatewayBattary,"GatewayPower": GatewayPower , "Date": date, "Time": time ,
-                "Sensorid": sensor_id_list[index] ,"SensorBattary": sensor_battary_list[index] ,"temperature" : sensor_temp_list[index] , "humidity": sensor_hum_list[index]
-                    }
-        dectionarylist.append(jsonname)
-        print(json.dumps(jsonname))
-        jsonlist.append(json.dumps(jsonname))
-    #mqttsend(jsonlist,sensor_id_list)
-    del jsonname,jsonlist,sensor_id_list,sensor_temp_list,sensor_hum_list,sensor_battary_list,GatwayId,date,time,GatewayBattary,GatewayPower,NumberOfSensors,Sensorhexlist
-    SendToInternalDataBase(dectionarylist)
-'''
-def SendToInternalDataBaseToken (dectionarylist):
-    bucket = "n"
-    client = InfluxDBClient(url="http://localhost:8086",
-                            token="n9cd2F9mYZcfhDE7892UzJv7xP38SSyQG9ybQRsYmGp6Bbv6OnbrGl5QGygzsZuzaCQTX-10w1EqY4axQNEzVg==",
-                            org="skarpt")
-
-    write_api = client.write_api(write_options=SYNCHRONOUS)
-    query_api = client.query_api()
-    for i in dectionarylist :
-        p = Point("Tzone").tag("gateway",i["Sensorid"]).field("temperature", float(i["temperature"])).time(datetime(2021, 12, 20, 0, 0), WritePrecision.US)
-        write_api.write(bucket=bucket, record=p)
-        print("database saved read")
-'''
-def BuildJsonDataBase (Date, Time , Temp , Hum , Battery ,GateWayID, SensorID) :
-    listofdate = Date.split("/")
-    Year , Month , day = listofdate
-    listoftime = Time.split("/")
-    Hour , Mins , Sec = listoftime
-    Year = "20" + Year
-    ReadingTime = datetime(int (Year),int ( Month ) , int (day) , int (Hour) , int (Mins ),int (Sec)).isoformat() + "Z"
-    JsonData = [
-    {
-        "measurement": measurement,
-        "tags": {
-            "SensorID": SensorID,
-            "GatewayID" : GateWayID
-        },
-        "time": ReadingTime,
-        "fields": {
-            "Temperature": float(Temp),
-            "Humidity": float(Hum),
-            "Battery": float(Battery)
+        json_object = {
+            "GatewayId": "87654321",  # Fixed Gateway ID
+            "GatewayBattery": 95,
+            "GatewayPower": 3.2,
+            "Date": current_date,
+            "Time": current_time,
+            "data": []
         }
-    }
-]
-    return JsonData
-def SendToInternalDataBase (dectionarylist):
-    from influxdb import InfluxDBClient
-    client = InfluxDBClient(DATABASE_IP, DATABASE_PORT , USERNAME_DATABASE, PASSWORD_DATABASE, INTERNAL_DATABASE_NAME)
-    for i in dectionarylist :
-        DataPoint = BuildJsonDataBase(i["Date"],i["Time"],i["temperature"],i["humidity"],i["SensorBattary"],i["GatewayId"],i["Sensorid"])
-        client.write_points(DataPoint)
-    del  dectionarylist
 
-def check_packet(data) :
-    return True
-    check_code = data[-8:- 4]
-    # The range is from Protocol type to Packet index(include Protocol type and Packet index)
-    hex_data = data[8:-8]
-    our_model = PyCRC.CRC_16_MODBUS
-    crc = CRC.CRC(hex_data, our_model)
+        # Loop through all data points retrieved from InfluxDB
+        for point in result.get_points():
+            temperature = point["value"]  # Get the real temperature value
 
-    if check_code.lower() == crc.lower() :
-        return True
-    else:
-        return False
+            json_object["data"].append({
+                "Sensorid": "87654321",  # Fixed Sensor ID
+                "humidity": 54,  # If humidity data is available, replace None with its value
+                "temperature": temperature
+            })
 
-def preprocess_packet(data):
-    global full_packet_list
+        if json_object["data"]:
+            send_json_to_server(json_object)
+        else:
+            print("No new data found")
 
-    data = str(binascii.hexlify(data).decode())
-    print(data)
-    data = data.strip()
-    if data.startswith("545a") and data.endswith("0d0a"):
-        full_packet_list = []
-        if check_packet(data) :
-            ConvertPacketIntoElemets(data)
-        return [binascii.unhexlify(responsePacket.strip()) , binascii.unhexlify(response2.strip())]
-    elif data.endswith("0d0a") and not data.startswith("545a") and full_packet_list :
-        collecting_packet = ''
-        for packet_part in full_packet_list:
-            collecting_packet += packet_part
-        collecting_packet += data
-        if check_packet(collecting_packet):
-            ConvertPacketIntoElemets(collecting_packet)
-        full_packet_list = []
-        return [binascii.unhexlify(responsePacket.strip()), binascii.unhexlify(response2.strip())]
-    else:
-        full_packet_list.append(data)
+        time.sleep(60)
 
-    return 0
-import asyncore
 
-class EchoHandler(asyncore.dispatcher_with_send):
-
-    def handle_read(self):
-        data = self.recv(8192)
-        if data:
-            try:
-                send_list = preprocess_packet(data)
-                print(send_list)
-                if send_list != 0:
-                    for i in send_list:
-                        self.send(i)
-            except Exception as e:
-                print(f"Error in handle_read: {e}")
-
-    def handle_close(self):
-        print("Connection closed")
-        self.close()
-
-class EchoServer(asyncore.dispatcher):
-
-    def __init__(self, host, port):
-        super().__init__()
-        self.create_socket()
-        self.set_reuse_addr()
-        self.bind((host, port))
-        self.listen(5)
-
-    def handle_accepted(self, sock, addr):
-        print('Incoming connection from %s' % repr(addr))
-        handler = EchoHandler(sock)
-
-# Run the server
-server = EchoServer('', 2000)
-try:
-    asyncore.loop()
-except KeyboardInterrupt:
-    print("Server interrupted and stopped.")
+# Start fetching data from InfluxDB
+fetch_from_influxdb()
