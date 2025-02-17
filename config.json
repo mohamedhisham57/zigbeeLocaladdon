@@ -1,5 +1,5 @@
 {
-  "name": "Zigbee Addon",
+  "name": "ZigbeeAddon",
   "version": "1.0",
   "slug": "zigbeeaddon",
   "description": "Local Zigbee Gateway with InfluxDB Integration",
