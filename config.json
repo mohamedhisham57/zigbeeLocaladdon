@@ -31,6 +31,6 @@
     "add_readings_uri": "url",
     "username": "str",
     "password": "password",
-    "sensor_ids": ["str"]
+    "SENSOR_IDS": ["str"]
   }
 }
