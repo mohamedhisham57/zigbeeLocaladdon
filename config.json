@@ -1,15 +1,36 @@
 {
-  "name": "zigbeeaddon",
+  "name": "Zigbee Addon",
   "version": "1.0",
   "slug": "zigbeeaddon",
-  "description": "localdatabase v2 gateway on local database home assistant",
+  "description": "Local Zigbee Gateway with InfluxDB Integration",
   "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "startup": "application",
   "boot": "auto",
-  "map": [
-    "ssl:rw",
-    "backup:rw"
-  ],
+  "map": ["ssl:rw", "backup:rw"],
   "host_network": true,
-  "hassio_api": true
+  "hassio_api": true,
+  "options": {
+    "influxdb_host": "",
+    "influxdb_port": 8086,
+    "influxdb_user": "",
+    "influxdb_password": "",
+    "influxdb_dbname": "",
+    "login_uri": "",
+    "add_readings_uri": "",
+    "username": "",
+    "password": "",
+    "sensor_ids": []
+  },
+  "schema": {
+    "influxdb_host": "str",
+    "influxdb_port": "int",
+    "influxdb_user": "str",
+    "influxdb_password": "password",
+    "influxdb_dbname": "str",
+    "login_uri": "url",
+    "add_readings_uri": "url",
+    "username": "str",
+    "password": "password",
+    "sensor_ids": ["str"]
+  }
 }
