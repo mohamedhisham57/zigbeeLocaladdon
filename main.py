@@ -113,7 +113,7 @@ def fetch_from_influxdb():
         else:
             print("No new data found")
 
-        time.sleep(60)
+        time.sleep(10)
 
 
 # Start fetching data from InfluxDB
