@@ -1,7 +1,7 @@
 {
-  "name": "localaddontoinflux",
+  "name": "zigbeeaddon",
   "version": "1.0",
-  "slug": "localaddontoinflux",
+  "slug": "zigbeeaddon",
   "description": "localdatabase v2 gateway on local database home assistant",
   "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "startup": "application",
