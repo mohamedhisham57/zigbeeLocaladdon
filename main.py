@@ -32,7 +32,7 @@ USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
 
 # ✅ *Correctly Load Sensor IDs*
-SENSOR_IDS = config.get("sensor_ids", [])  # 🟢 FIXED: Use "sensor_ids", NOT "SENSOR_IDS"
+SENSOR_IDS = config.get("SENSOR_IDS", [])  # 🟢 FIXED: Use "sensor_ids", NOT "SENSOR_IDS"
 
 # Debugging: Print the loaded sensor IDs
 print("📡 Sensor IDs Loaded:", SENSOR_IDS)
