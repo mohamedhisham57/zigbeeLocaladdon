@@ -19,7 +19,7 @@
     "add_readings_uri": "",
     "username": "",
     "password": "",
-    "sensor_ids": []
+    "SENSOR_IDS": []
   },
   "schema": {
     "influxdb_host": "str",
@@ -31,6 +31,6 @@
     "add_readings_uri": "url",
     "username": "str",
     "password": "password",
-    "sensor_ids": ["str"]
+    "SENSOR_IDS": ["str"]
   }
 }
