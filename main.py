@@ -8,6 +8,7 @@ from influxdb import InfluxDBClient
 
 # Load Configuration from Home Assistant Add-on Options
 CONFIG_FILE = "/data/options.json"
+
 try:
     with open(CONFIG_FILE, "r") as f:
         config = json.load(f)
@@ -15,7 +16,10 @@ except FileNotFoundError:
     print("❌ Configuration file not found! Please check your Add-on settings.")
     config = {}
 
-# *Load Configuration from UI*
+# Debugging: Print the loaded configuration
+print("🔍 Loaded Configuration:", json.dumps(config, indent=4))
+
+# Load configuration from UI
 INFLUXDB_HOST = config.get("influxdb_host", "")
 INFLUXDB_PORT = config.get("influxdb_port", 8086)
 INFLUXDB_USER = config.get("influxdb_user", "")
@@ -27,33 +31,46 @@ ADD_READINGS_URI = config.get("add_readings_uri", "")
 USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
 
-# *Load Sensor IDs*
+# Load Sensor IDs
 SENSOR_IDS = config.get("sensor_ids", [])
+
+# Debugging: Print the loaded sensor IDs
+print("📡 Sensor IDs Loaded:", SENSOR_IDS)
+
 if not SENSOR_IDS:
     print("⚠ No sensors configured! Please enter sensor IDs in the Add-on settings.")
+    exit(1)  # Exit script if no sensors are configured
 
-# *Ensure SENSOR_IDS is loaded before using*
+# Ensure SENSOR_IDS is loaded before using
 LAST_HUMIDITY = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_TEMP_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_HUMIDITY_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 
-# *Connect to InfluxDB AFTER Loading Configuration*
+# Connect to InfluxDB
 try:
     client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
     print(f"✅ Connected to InfluxDB: {INFLUXDB_HOST}:{INFLUXDB_PORT}")
 except Exception as e:
     print(f"❌ Failed to connect to InfluxDB: {e}")
+    exit(1)  # Exit if InfluxDB connection fails
 
 
-# *Function to get current date and time*
+# Function to get current date and time
 def get_current_date_time():
     now = datetime.now()
     return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
 
 
-# *Function to log in and retrieve a token*
+# Function to log in and retrieve a token
+TOKEN = ""
+
+
 def login():
     global TOKEN
+    if not LOGIN_URI or not USERNAME or not PASSWORD:
+        print("❌ Login credentials are missing in the config!")
+        return
+
     basic_auth = f"{USERNAME}:{PASSWORD}"
     encoded_u = base64.b64encode(basic_auth.encode()).decode()
     headers = {"Authorization": f"Basic {encoded_u}"}
@@ -69,11 +86,15 @@ def login():
         print(f"❌ Login request failed: {e}")
 
 
-# *Function to send data to cloud*
+# Function to send data to cloud
 def send_json_to_server(json_object):
     global TOKEN
     if not TOKEN:
         login()
+
+    if not ADD_READINGS_URI or not TOKEN:
+        print("❌ Missing API endpoint or token. Skipping data send.")
+        return
 
     headers = {"token": TOKEN}
     try:
@@ -89,7 +110,7 @@ def send_json_to_server(json_object):
         return False
 
 
-# *Function to fetch the latest temperature and humidity for a given sensor*
+# Function to fetch the latest temperature and humidity for a given sensor
 def fetch_latest_sensor_data(sensor_id):
     global LAST_HUMIDITY  # Track last known humidity value
 
@@ -131,7 +152,7 @@ def fetch_latest_sensor_data(sensor_id):
         return None, None, None, None
 
 
-# *Function to listen for new sensor updates for all sensors*
+# Function to listen for new sensor updates for all sensors
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
 
@@ -139,15 +160,15 @@ def listen_for_new_data():
         for sensor_id in SENSOR_IDS:
             latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
 
-            # *Check if temperature changed*
+            # Check if temperature changed
             temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP.get(sensor_id, None)
             humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP.get(sensor_id, None)
 
-            # If *either timestamp* is new, process the data
+            # If either timestamp is new, process the data
             if temp_changed or humidity_changed:
                 print(f"📢 New sensor reading detected: {sensor_id} | {latest_temperature}°C, {latest_humidity}% at {temp_timestamp if temp_changed else humidity_timestamp}")
 
-                # *Update timestamps individually*
+                # Update timestamps individually
                 if temp_changed:
                     LAST_TEMP_TIMESTAMP[sensor_id] = temp_timestamp
                 if humidity_changed:
@@ -156,7 +177,7 @@ def listen_for_new_data():
                 current_date, current_time = get_current_date_time()
 
                 json_object = {
-                    "GatewayId": "87654321",  # Use sensor ID as Gateway ID
+                    "GatewayId": sensor_id,  # Use sensor ID as Gateway ID
                     "Date": current_date,
                     "Time": current_time,
                     "data": [
@@ -173,5 +194,5 @@ def listen_for_new_data():
         time.sleep(2)  # Small delay to avoid excessive queries
 
 
-# *Start listening for updates*
+# Start listening for updates
 listen_for_new_data()
