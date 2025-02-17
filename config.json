@@ -6,29 +6,10 @@
   "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "startup": "application",
   "boot": "auto",
-  "options": {"database_port": "8086",
-    "username_database": "!secret username_database",
-    "password_database": "!secret password_database",
-    "internal_backup_database_name": "!secret internal_backup_database_name",
-    "internal_database_name": "!secret internal_database_name",
-    "database_ip": "!secret database_ip",
-    "measurement": "!secret measurement"},
-  "schema": {
-    "database_port": "str",
-    "username_database": "str",
-    "password_database": "str",
-    "internal_backup_database_name": "str",
-    "internal_database_name": "str",
-    "database_ip": "str",
-    "measurement": "str"
-  },
-  "ports": {
-    "2000/tcp": 2000
-  },
   "map": [
     "ssl:rw",
     "backup:rw"
-  ] ,
-  "host_network" : true ,
+  ],
+  "host_network": true,
   "hassio_api": true
 }
