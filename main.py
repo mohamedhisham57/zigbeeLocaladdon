@@ -15,28 +15,24 @@ except FileNotFoundError:
     print("❌ Configuration file not found! Please check your Add-on settings.")
     config = {}
 
-# *Load InfluxDB Configuration from UI*
+# *Load Configuration from UI*
 INFLUXDB_HOST = config.get("influxdb_host", "")
 INFLUXDB_PORT = config.get("influxdb_port", 8086)
 INFLUXDB_USER = config.get("influxdb_user", "")
 INFLUXDB_PASSWORD = config.get("influxdb_password", "")
 INFLUXDB_DBNAME = config.get("influxdb_dbname", "")
 
-# *Load API Configuration from UI*
 LOGIN_URI = config.get("login_uri", "")
 ADD_READINGS_URI = config.get("add_readings_uri", "")
 USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
-TOKEN = ""
 
-# *Load Sensor IDs from UI*
+# *Load Sensor IDs*
 SENSOR_IDS = config.get("sensor_ids", [])
-
-# *Warn if No Sensors Are Configured*
 if not SENSOR_IDS:
     print("⚠ No sensors configured! Please enter sensor IDs in the Add-on settings.")
 
-# *Store last known humidity values & timestamps for each sensor*
+# *Ensure SENSOR_IDS is loaded before using*
 LAST_HUMIDITY = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_TEMP_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 LAST_HUMIDITY_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
