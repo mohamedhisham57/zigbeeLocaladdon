@@ -156,7 +156,7 @@ def listen_for_new_data():
                 current_date, current_time = get_current_date_time()
 
                 json_object = {
-                    "GatewayId": sensor_id,  # Use sensor ID as Gateway ID
+                    "GatewayId": "87654321",  # Use sensor ID as Gateway ID
                     "Date": current_date,
                     "Time": current_time,
                     "data": [
