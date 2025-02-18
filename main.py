@@ -87,95 +87,67 @@ def login():
         print(f"❌ Login request failed: {e}")
 
 def store_failed_reading(json_object):
-    """Store failed reading in Home Assistant's InfluxDB"""
+    """Store failed reading in Home Assistant's InfluxDB Hold database"""
     try:
         # Convert the JSON object to InfluxDB point format
         current_time = datetime.now()
         point = {
-            "measurement": "failed_sensor_readings",
+            "measurement": "unsent_data",  # Changed to match your database structure
             "tags": {
-                "domain": "sensor",
-                "entity_id": f"{json_object['data'][0]['Sensorid']}_failed",
-                "sensor_id": json_object["data"][0]["Sensorid"],
-                "gateway_id": json_object["GatewayId"]
+                "sensor_id": json_object["data"][0]["Sensorid"]
             },
             "time": current_time,
             "fields": {
-                "temperature": float(json_object["data"][0]["temperature"]),
-                "humidity": float(json_object["data"][0]["humidity"]),
-                "original_date": json_object["Date"],
-                "original_time": json_object["Time"],
-                "retry_count": 0,
-                "raw_data": json.dumps(json_object)
+                "json_data": json.dumps(json_object)  # Store the entire JSON as a string
             }
         }
         
-        client.write_points([point])
-        print(f"✅ Failed reading stored for sensor {json_object['data'][0]['Sensorid']}")
+        # Specify the database name as 'Hold'
+        client.write_points([point], database='Hold')
+        print(f"✅ Failed reading stored in Hold database for sensor {json_object['data'][0]['Sensorid']}")
         return True
     except Exception as e:
-        print(f"❌ Failed to store reading: {e}")
+        print(f"❌ Failed to store reading in Hold database: {e}")
         return False
 
 def retry_failed_readings():
-    """Attempt to resend failed readings from Home Assistant's InfluxDB"""
+    """Attempt to resend failed readings from Hold database"""
     query = '''
         SELECT *
-        FROM "failed_sensor_readings"
-        WHERE "retry_count" < 5
-        ORDER BY time ASC
+        FROM "Hold"."autogen"."unsent_data"
     '''
     
     try:
+        # Make sure we're querying the Hold database
+        client.switch_database('Hold')
         result = client.query(query)
         points = list(result.get_points())
         
         for point in points:
             try:
-                json_object = json.loads(point["raw_data"])
-                sensor_id = point["sensor_id"]
+                json_object = json.loads(point["json_data"])
+                sensor_id = json_object["data"][0]["Sensorid"]
                 
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
                 
                 if send_json_to_server(json_object):
                     # If successful, delete the point
                     delete_query = f'''
-                        DELETE FROM "failed_sensor_readings"
-                        WHERE "sensor_id" = '{sensor_id}'
-                        AND time = '{point["time"]}'
+                        DELETE FROM "unsent_data"
+                        WHERE time = '{point["time"]}'
                     '''
                     client.query(delete_query)
-                    print(f"✅ Successfully resent and removed failed reading for sensor {sensor_id}")
-                else:
-                    # Update retry count
-                    new_retry_count = point["retry_count"] + 1
-                    update_point = {
-                        "measurement": "failed_sensor_readings",
-                        "tags": {
-                            "domain": "sensor",
-                            "entity_id": f"{sensor_id}_failed",
-                            "sensor_id": sensor_id,
-                            "gateway_id": point["gateway_id"]
-                        },
-                        "time": point["time"],
-                        "fields": {
-                            "temperature": float(point["temperature"]),
-                            "humidity": float(point["humidity"]),
-                            "original_date": point["original_date"],
-                            "original_time": point["original_time"],
-                            "retry_count": new_retry_count,
-                            "raw_data": point["raw_data"]
-                        }
-                    }
-                    client.write_points([update_point])
-                    print(f"⚠ Retry failed for sensor {sensor_id}, attempt {new_retry_count}/5")
+                    print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
+                    
             except Exception as e:
-                print(f"❌ Error processing reading for sensor {sensor_id}: {e}")
+                print(f"❌ Error processing reading: {e}")
                 continue
                 
     except Exception as e:
-        print(f"❌ Error querying failed readings: {e}")
-
+        print(f"❌ Error querying Hold database: {e}")
+    finally:
+        # Switch back to original database
+        client.switch_database(INFLUXDB_DBNAME)
 def send_json_to_server(json_object):
     """Send data to server with error handling"""
     global TOKEN
