@@ -87,47 +87,67 @@ def login():
         print(f"❌ Login request failed: {e}")
 
 def store_failed_reading(json_object):
-    """Store failed reading in Hold database"""
+    """Store failed reading in Home Assistant's InfluxDB Hold database"""
     try:
-        current_time = datetime.utcnow().isoformat() + "Z"  # Use UTC time
+        # Convert the JSON object to InfluxDB point format
+        current_time = datetime.now()
         point = {
-            "measurement": "unsent_data",
-            "tags": {"sensor_id": json_object["data"][0]["Sensorid"]},
+            "measurement": "unsent_data",  # Changed to match your database structure
+            "tags": {
+                "sensor_id": json_object["data"][0]["Sensorid"]
+            },
             "time": current_time,
-            "fields": {"json_data": json.dumps(json_object)}
+            "fields": {
+                "json_data": json.dumps(json_object)  # Store the entire JSON as a string
+            }
         }
-        client.switch_database("Hold")
-        client.write_points([point])
+        
+        # Specify the database name as 'Hold'
+        client.write_points([point], database='Hold')
         print(f"✅ Failed reading stored in Hold database for sensor {json_object['data'][0]['Sensorid']}")
+        return True
     except Exception as e:
         print(f"❌ Failed to store reading in Hold database: {e}")
+        return False
 
 def retry_failed_readings():
-    """Retry sending failed readings from Hold database"""
+    """Attempt to resend failed readings from Hold database"""
     query = 'SELECT * FROM "unsent_data"'
+
     try:
-        client.switch_database("Hold")
+        client.switch_database('Hold')  # Ensure querying the correct database
         result = client.query(query)
         points = list(result.get_points())
 
         for point in points:
-            json_object = json.loads(point["json_data"])
-            sensor_id = json_object["data"][0]["Sensorid"]
+            try:
+                json_object = json.loads(point["json_data"])
+                sensor_id = json_object["data"][0]["Sensorid"]
 
-            print(f"🔄 Retrying failed reading for sensor {sensor_id}")
-            if send_json_to_server(json_object):  # Send & confirm success
-                delete_query = f'DELETE FROM "unsent_data" WHERE time = \'{point["time"]}\''
-                client.query(delete_query)
-                print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
+                print(f"🔄 Retrying failed reading for sensor {sensor_id}")
+
+                # ✅ Only delete if send_json_to_server returns True
+                if send_json_to_server(json_object): 
+                    delete_query = f'''
+                        DELETE FROM "unsent_data" WHERE time = '{point["time"]}'
+                    '''
+                    client.query(delete_query)
+                    print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
+                else:
+                    print(f"⚠ Keeping data in Hold DB for sensor {sensor_id}, server did not confirm success.")
+
+            except Exception as e:
+                print(f"❌ Error processing stored reading: {e}")
+                continue
 
     except Exception as e:
         print(f"❌ Error querying Hold database: {e}")
 
     finally:
-        client.switch_database(INFLUXDB_DBNAME)  # Switch back
+        client.switch_database(INFLUXDB_DBNAME)  # Switch back to main DB
 
 def send_json_to_server(json_object):
-    """Send data and delete from Hold DB only if responseCode is 200"""
+    """Send data to server and delete from Hold DB only if responseCode is 200"""
     global TOKEN
     if not TOKEN:
         login()
@@ -135,45 +155,117 @@ def send_json_to_server(json_object):
     if not ADD_READINGS_URI or not TOKEN:
         print("❌ Missing API endpoint or token. Storing in Hold database.")
         store_failed_reading(json_object)
-        return False
+        return False  # ✅ Return False so the data is NOT deleted!
 
     headers = {"token": TOKEN}
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
-        response_json = response.json()  # Ensure it's valid JSON
 
+        # ✅ Try parsing JSON response
+        try:
+            response_json = response.json()
+        except json.JSONDecodeError:
+            print(f"❌ Server responded with invalid JSON: {response.status_code} - {response.text}")
+            store_failed_reading(json_object)
+            return False  # ✅ Prevent deletion if response is invalid
+
+        # ✅ Check explicitly if responseCode is 200
         if response_json.get("responseCode") == 200:
-            print("✅ Data successfully sent")
-            return True
+            print("✅ Data successfully sent, deleting from Hold DB")
+            return True  # ✅ Mark as success, allow deletion
         else:
             print(f"❌ Server error: {response_json}")
             store_failed_reading(json_object)
-            return False
+            return False  # ✅ Prevent deletion if response is not success
 
-    except (requests.RequestException, json.JSONDecodeError) as e:
-        print(f"❌ Error sending data: {e}")
+    except requests.RequestException as e:
+        print(f"❌ Error sending data to server: {e}")
         store_failed_reading(json_object)
-        return False
+        return False  # ✅ Prevent deletion on failure
+
+def fetch_latest_sensor_data(sensor_id):
+    """Fetch the latest temperature and humidity for a given sensor"""
+    global LAST_HUMIDITY
+
+    # Query for latest temperature
+    temp_query = f'''
+    SELECT last("value") AS temperature, time 
+    FROM "Skarpt"."autogen"."°C" 
+    WHERE "entity_id" = '{sensor_id}_temperature'
+    '''
+
+    # Query for latest humidity
+    humidity_query = f'''
+    SELECT last("value") AS humidity, time 
+    FROM "Skarpt"."autogen"."%" 
+    WHERE "entity_id" = '{sensor_id}_humidity'
+    '''
+
+    try:
+        # Fetch Temperature Data
+        temp_result = client.query(temp_query)
+        temp_points = list(temp_result.get_points())
+        temperature = temp_points[0]["temperature"] if temp_points else None
+        temp_timestamp = temp_points[0]["time"] if temp_points else None
+
+        # Fetch Humidity Data
+        humidity_result = client.query(humidity_query)
+        humidity_points = list(humidity_result.get_points())
+        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY.get(sensor_id, None)
+        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None
+
+        # Update last known humidity
+        if humidity_points:
+            LAST_HUMIDITY[sensor_id] = humidity
+
+        return temperature, humidity, temp_timestamp, humidity_timestamp
+
+    except Exception as e:
+        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
+        return None, None, None, None
 
 def listen_for_new_data():
-    """Listen for new sensor updates"""
+    """Main loop to listen for new sensor updates"""
     print("🔄 Listening for new sensor updates...")
 
     while True:
-        retry_failed_readings()  # Retry failed readings every loop
+        # Try to resend failed readings every minute
+        if int(time.time()) % 60 == 0:
+            retry_failed_readings()
+        
         for sensor_id in SENSOR_IDS:
             latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
-            
-            current_date, current_time = get_current_date_time()
-            json_object = {
-                "GatewayId": "87654321",
-                "Date": current_date,
-                "Time": current_time,
-                "data": [{"Sensorid": sensor_id, "humidity": latest_humidity or 0, "temperature": latest_temperature or 0}]
-            }
-            send_json_to_server(json_object)  # Send to server
 
-        time.sleep(5)  # Avoid flooding
+            temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP.get(sensor_id, None)
+            humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP.get(sensor_id, None)
 
+            if temp_changed or humidity_changed:
+                print(f"📢 New reading: {sensor_id} | {latest_temperature}°C, {latest_humidity}% at {temp_timestamp if temp_changed else humidity_timestamp}")
+
+                if temp_changed:
+                    LAST_TEMP_TIMESTAMP[sensor_id] = temp_timestamp
+                if humidity_changed:
+                    LAST_HUMIDITY_TIMESTAMP[sensor_id] = humidity_timestamp
+
+                current_date, current_time = get_current_date_time()
+
+                json_object = {
+                    "GatewayId": '87654321',
+                    "Date": current_date,
+                    "Time": current_time,
+                    "data": [
+                        {
+                            "Sensorid": sensor_id,
+                            "humidity": latest_humidity if latest_humidity is not None else 0,
+                            "temperature": latest_temperature if latest_temperature is not None else 0
+                        }
+                    ]
+                }
+
+                send_json_to_server(json_object)
+
+        time.sleep(2)
+
+# Start the main loop
 if __name__ == "__main__":
-    listen_for_new_data()
+    listen_for_new_data()  
