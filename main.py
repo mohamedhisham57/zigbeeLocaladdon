@@ -62,7 +62,7 @@ except Exception as e:
 # Function to get current date and time
 def get_current_date_time():
     now = datetime.now()
-    return now.strftime("%Y/%m/%d"), now.strftime("%H:%M:%S")
+    return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
 
 # Function to log in and retrieve a token
 TOKEN = ""
@@ -92,14 +92,14 @@ def store_unsent_data(json_object):
     json_body = [
         {
             "measurement": "unsent_data",
-            "tags": {"sensor_id": json_object["87654321"]},
+            "tags": {"sensor_id": json_object["GatewayId"]},  # ✅ FIXED
             "fields": {
                 "json_data": json.dumps(json_object)
             }
         }
     ]
     hold_client.write_points(json_body)
-    print(f"⚠ Data stored in Hold DB for {json_object['87654321']}")
+    print(f"⚠ Data stored in Hold DB for {json_object['GatewayId']}")
 
 # Function to retry sending unsent data
 def retry_sending_unsent_data():
@@ -110,8 +110,8 @@ def retry_sending_unsent_data():
     for point in points:
         json_data = json.loads(point["json_data"])
         if send_json_to_server(json_data):  # If successful, remove from Hold DB
-            hold_client.query(f'DELETE FROM "unsent_data" WHERE sensor_id = \'{json_data["87654321"]}\'')
-            print(f"✅ Successfully sent and removed from Hold DB: {json_data['87654321']}")
+            hold_client.query(f'DELETE FROM "unsent_data" WHERE sensor_id = \'{json_data["GatewayId"]}\'')
+            print(f"✅ Successfully sent and removed from Hold DB: {json_data['GatewayId']}")
 
 # Function to send data to cloud
 def send_json_to_server(json_object):
@@ -140,42 +140,6 @@ def send_json_to_server(json_object):
         store_unsent_data(json_object)  # Store in Hold DB
         return False
 
-# Function to fetch the latest temperature and humidity for a given sensor
-def fetch_latest_sensor_data(sensor_id):
-    global LAST_HUMIDITY
-
-    temp_query = f'''
-    SELECT last("value") AS temperature, time 
-    FROM "Skarpt"."autogen"."°C" 
-    WHERE "entity_id" = '{sensor_id}_temperature'
-    '''
-
-    humidity_query = f'''
-    SELECT last("value") AS humidity, time 
-    FROM "Skarpt"."autogen"."%" 
-    WHERE "entity_id" = '{sensor_id}_humidity'
-    '''
-
-    try:
-        temp_result = client.query(temp_query)
-        temp_points = list(temp_result.get_points())
-        temperature = temp_points[0]["temperature"] if temp_points else None
-        temp_timestamp = temp_points[0]["time"] if temp_points else None
-
-        humidity_result = client.query(humidity_query)
-        humidity_points = list(humidity_result.get_points())
-        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY.get(sensor_id, None)
-        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None
-
-        if humidity_points:
-            LAST_HUMIDITY[sensor_id] = humidity
-
-        return temperature, humidity, temp_timestamp, humidity_timestamp
-
-    except Exception as e:
-        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
-        return None, None, None, None
-
 # Function to listen for new sensor updates
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
@@ -185,18 +149,22 @@ def listen_for_new_data():
             latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
 
             if latest_temperature is None and latest_humidity is None:
-                continue
+                continue  # No data, skip
 
             current_date, current_time = get_current_date_time()
 
             json_object = {
-                "GatewayId": '87654321',
+                "GatewayId": "87654321", 
                 "Date": current_date,
                 "Time": current_time,
-                "data": [
-                    {"Sensorid": sensor_id, "humidity": latest_humidity or 0, "temperature": latest_temperature or 0}
-                ]
+                "data": []
             }
+
+            if latest_temperature is not None:
+                json_object["data"].append({"Sensorid": sensor_id, "temperature": latest_temperature})
+
+            if latest_humidity is not None:
+                json_object["data"].append({"Sensorid": sensor_id, "humidity": latest_humidity})
 
             send_json_to_server(json_object)
 
