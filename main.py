@@ -117,21 +117,23 @@ def retry_failed_readings():
         result = client.query(query)
         points = list(result.get_points())
 
+        print(f"🗄 Found {len(points)} failed readings in Hold database")  # Debugging output
+
         for point in points:
             try:
                 json_object = json.loads(point["json_data"])
                 sensor_id = json_object["data"][0]["Sensorid"]
 
-                print(f"🔄 Retrying failed reading for sensor {sensor_id}")
+                print(f"🔄 Retrying failed reading for sensor {sensor_id}...")
 
                 if send_json_to_server(json_object): 
                     delete_query = f'DELETE FROM "unsent_data" WHERE time = \'{point["time"]}\''
+                    print(f"🗑 Deleting data for sensor {sensor_id} at time {point['time']}")  # Debugging output
                     client.query(delete_query)
                     print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
 
             except Exception as e:
                 print(f"❌ Error processing stored reading: {e}")
-                continue
 
     except Exception as e:
         print(f"❌ Error querying Hold database: {e}")
@@ -160,6 +162,8 @@ def send_json_to_server(json_object):
             print(f"❌ Server responded with invalid JSON: {response.status_code} - {response.text}")
             store_failed_reading(json_object)
             return False
+
+        print(f"🔎 Server Response: {response_json}")  # Debugging output
 
         if response_json.get("responseCode") == 200:
             print("✅ Data successfully sent, deleting from Hold DB")
