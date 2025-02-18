@@ -126,13 +126,15 @@ def retry_failed_readings():
 
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
 
-                # ✅ Only delete if `send_json_to_server` returns True (successful send)
+                # ✅ Only delete if `send_json_to_server` returns True
                 if send_json_to_server(json_object): 
                     delete_query = f'''
                         DELETE FROM "unsent_data" WHERE time = '{point["time"]}'
                     '''
                     client.query(delete_query)
                     print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
+                else:
+                    print(f"⚠ Keeping data in Hold DB for sensor {sensor_id}, server did not confirm success.")
 
             except Exception as e:
                 print(f"❌ Error processing stored reading: {e}")
@@ -152,31 +154,34 @@ def send_json_to_server(json_object):
 
     if not ADD_READINGS_URI or not TOKEN:
         print("❌ Missing API endpoint or token. Storing in Hold database.")
-        return store_failed_reading(json_object)
+        store_failed_reading(json_object)
+        return False  # ✅ Return False so the data is NOT deleted!
 
     headers = {"token": TOKEN}
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
 
-        # ✅ Parse JSON response
+        # ✅ Try parsing JSON response
         try:
             response_json = response.json()
         except json.JSONDecodeError:
             print(f"❌ Server responded with invalid JSON: {response.status_code} - {response.text}")
-            return store_failed_reading(json_object)
+            store_failed_reading(json_object)
+            return False  # ✅ Prevent deletion if response is invalid
 
         # ✅ Check explicitly if responseCode is 200
         if response_json.get("responseCode") == 200:
             print("✅ Data successfully sent, deleting from Hold DB")
-            return True  # ✅ Mark as success
-
+            return True  # ✅ Mark as success, allow deletion
         else:
             print(f"❌ Server error: {response_json}")
-            return store_failed_reading(json_object)  # Store if responseCode is not 200
+            store_failed_reading(json_object)
+            return False  # ✅ Prevent deletion if response is not success
 
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
-        return store_failed_reading(json_object)
+        store_failed_reading(json_object)
+        return False  # ✅ Prevent deletion on failure
 
 def fetch_latest_sensor_data(sensor_id):
     """Fetch the latest temperature and humidity for a given sensor"""
