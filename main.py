@@ -187,19 +187,18 @@ def listen_for_new_data():
 
             current_date, current_time = get_current_date_time()
 
-            json_object = {
-                "GatewayId": "87654321", 
-                "Date": current_date,
-                "Time": current_time,
-                "data": []
-            }
-
-            if latest_temperature is not None:
-                json_object["data"].append({"Sensorid": sensor_id, "temperature": latest_temperature})
-
-            if latest_humidity is not None:
-                json_object["data"].append({"Sensorid": sensor_id, "humidity": latest_humidity})
-
+                json_object = {
+                    "GatewayId": '87654321',  # Use sensor ID as Gateway ID
+                    "Date": current_date,
+                    "Time": current_time,
+                    "data": [
+                        {
+                            "Sensorid": sensor_id,  # Use sensor ID as Sensor ID
+                            "humidity": latest_humidity if latest_humidity is not None else 0,
+                            "temperature": latest_temperature if latest_temperature is not None else 0
+                        }
+                    ]
+                }
             send_json_to_server(json_object)
 
         time.sleep(2)
