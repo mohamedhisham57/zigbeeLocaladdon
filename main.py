@@ -126,8 +126,8 @@ def retry_failed_readings():
                 
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
 
-                # ✅ Only delete after a **successful** send
-                if send_json_to_server(json_object):
+                # ✅ Only delete after a **confirmed** successful response
+                if send_json_to_server(json_object): 
                     delete_query = f'''
                         DELETE FROM "unsent_data" WHERE time = '{point["time"]}'
                     '''
@@ -145,7 +145,7 @@ def retry_failed_readings():
         client.switch_database(INFLUXDB_DBNAME)  # Switch back to main DB
 
 def send_json_to_server(json_object):
-    """Send data to server with error handling"""
+    """Send data to server with proper response validation"""
     global TOKEN
     if not TOKEN:
         login()
@@ -157,12 +157,15 @@ def send_json_to_server(json_object):
     headers = {"token": TOKEN}
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
-        if response.status_code == 200:
+
+        # ✅ Only return True if the server successfully processes the request
+        if response.status_code == 200 and "success" in response.text.lower():
             print("✅ Data successfully sent")
-            return True
+            return True  # ✅ Confirm success only when valid response is received
         else:
-            print(f"❌ Failed to send data: {response.status_code} {response.text}")
+            print(f"❌ Server response error: {response.status_code} - {response.text}")
             return store_failed_reading(json_object)
+
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
         return store_failed_reading(json_object)
