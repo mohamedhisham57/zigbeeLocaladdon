@@ -123,10 +123,10 @@ def retry_failed_readings():
             try:
                 json_object = json.loads(point["json_data"])
                 sensor_id = json_object["data"][0]["Sensorid"]
-                
+
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
 
-                # ✅ Only delete after a **confirmed** successful response
+                # ✅ Only delete if `send_json_to_server` returns True (successful send)
                 if send_json_to_server(json_object): 
                     delete_query = f'''
                         DELETE FROM "unsent_data" WHERE time = '{point["time"]}'
@@ -145,7 +145,7 @@ def retry_failed_readings():
         client.switch_database(INFLUXDB_DBNAME)  # Switch back to main DB
 
 def send_json_to_server(json_object):
-    """Send data to server with proper response validation"""
+    """Send data to server and delete from Hold DB only if responseCode is 200"""
     global TOKEN
     if not TOKEN:
         login()
@@ -158,18 +158,21 @@ def send_json_to_server(json_object):
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
 
-        # ✅ Check both HTTP status code AND response content
-        if response.status_code == 200:
-            response_json = response.json()  # Try to parse JSON
-            if "success" in response_json and response_json["success"] is True:
-                print("✅ Data successfully sent")
-                return True  # ✅ Confirm success only when the response explicitly says so
-            else:
-                print(f"❌ Server response error: {response.status_code} - {response.text}")
-                return store_failed_reading(json_object)  # ❌ Store if not explicitly successful
-        else:
-            print(f"❌ Server responded with error: {response.status_code} - {response.text}")
+        # ✅ Parse JSON response
+        try:
+            response_json = response.json()
+        except json.JSONDecodeError:
+            print(f"❌ Server responded with invalid JSON: {response.status_code} - {response.text}")
             return store_failed_reading(json_object)
+
+        # ✅ Check explicitly if responseCode is 200
+        if response_json.get("responseCode") == 200:
+            print("✅ Data successfully sent, deleting from Hold DB")
+            return True  # ✅ Mark as success
+
+        else:
+            print(f"❌ Server error: {response_json}")
+            return store_failed_reading(json_object)  # Store if responseCode is not 200
 
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
