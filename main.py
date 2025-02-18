@@ -139,6 +139,40 @@ def send_json_to_server(json_object):
         print(f"❌ Error sending data to server: {e}")
         store_unsent_data(json_object)  # Store in Hold DB
         return False
+def fetch_latest_sensor_data(sensor_id):
+    global LAST_HUMIDITY  
+
+    temp_query = f'''
+    SELECT last("value") AS temperature, time 
+    FROM "Skarpt"."autogen"."°C" 
+    WHERE "entity_id" = '{sensor_id}_temperature'
+    '''
+    
+    humidity_query = f'''
+    SELECT last("value") AS humidity, time 
+    FROM "Skarpt"."autogen"."%" 
+    WHERE "entity_id" = '{sensor_id}_humidity'
+    '''
+
+    try:
+        temp_result = client.query(temp_query)
+        temp_points = list(temp_result.get_points())
+        temperature = temp_points[0]["temperature"] if temp_points else None
+        temp_timestamp = temp_points[0]["time"] if temp_points else None
+
+        humidity_result = client.query(humidity_query)
+        humidity_points = list(humidity_result.get_points())
+        humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY.get(sensor_id, None)
+        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None
+
+        if humidity_points:
+            LAST_HUMIDITY[sensor_id] = humidity
+
+        return temperature, humidity, temp_timestamp, humidity_timestamp
+
+    except Exception as e:
+        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
+        return None, None, None, None
 
 # Function to listen for new sensor updates
 def listen_for_new_data():
