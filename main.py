@@ -112,42 +112,38 @@ def store_failed_reading(json_object):
 
 def retry_failed_readings():
     """Attempt to resend failed readings from Hold database"""
-    query = '''
-        SELECT *
-        FROM "Hold"."autogen"."unsent_data"
-    '''
-    
+    query = 'SELECT * FROM "unsent_data"'
+
     try:
-        # Make sure we're querying the Hold database
-        client.switch_database('Hold')
+        client.switch_database('Hold')  # Ensure querying the correct database
         result = client.query(query)
         points = list(result.get_points())
-        
+
         for point in points:
             try:
                 json_object = json.loads(point["json_data"])
                 sensor_id = json_object["data"][0]["Sensorid"]
                 
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
-                
+
+                # ✅ Only delete after a **successful** send
                 if send_json_to_server(json_object):
-                    # If successful, delete the point
                     delete_query = f'''
-                        DELETE FROM "unsent_data"
-                        WHERE time = '{point["time"]}'
+                        DELETE FROM "unsent_data" WHERE time = '{point["time"]}'
                     '''
                     client.query(delete_query)
                     print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
-                    
+
             except Exception as e:
-                print(f"❌ Error processing reading: {e}")
+                print(f"❌ Error processing stored reading: {e}")
                 continue
-                
+
     except Exception as e:
         print(f"❌ Error querying Hold database: {e}")
+
     finally:
-        # Switch back to original database
-        client.switch_database(INFLUXDB_DBNAME)
+        client.switch_database(INFLUXDB_DBNAME)  # Switch back to main DB
+
 def send_json_to_server(json_object):
     """Send data to server with error handling"""
     global TOKEN
