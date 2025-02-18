@@ -81,8 +81,28 @@ def login():
     except requests.RequestException as e:
         print(f"❌ Login request failed: {e}")
 
+def fetch_latest_sensor_data(sensor_id):
+    """Fetch the latest temperature and humidity for a given sensor from Skarpt DB"""
+    temp_query = f'SELECT last("value") AS temperature FROM "Skarpt"."autogen"."°C" WHERE "entity_id" = \'{sensor_id}_temperature\''
+    humidity_query = f'SELECT last("value") AS humidity FROM "Skarpt"."autogen"."%" WHERE "entity_id" = \'{sensor_id}_humidity\''
+
+    try:
+        temp_result = client.query(temp_query)
+        temp_points = list(temp_result.get_points())
+        temperature = temp_points[0]["temperature"] if temp_points else None
+
+        humidity_result = client.query(humidity_query)
+        humidity_points = list(humidity_result.get_points())
+        humidity = humidity_points[0]["humidity"] if humidity_points else None
+
+        return temperature, humidity
+
+    except Exception as e:
+        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
+        return None, None
+
 def store_reading_in_hold(json_object):
-    """Store failed reading in Hold database for retry"""
+    """Store reading in Hold DB if it's not sent successfully"""
     try:
         current_time = datetime.utcnow().isoformat() + "Z"
         point = {
@@ -97,36 +117,16 @@ def store_reading_in_hold(json_object):
         }
         client.switch_database(HOLD_DBNAME)
         client.write_points([point])
-        print(f"✅ Reading stored in Hold DB for sensor {json_object['data'][0]['Sensorid']}")
+        print(f"✅ Stored reading in Hold DB for sensor {json_object['data'][0]['Sensorid']}")
     except Exception as e:
         print(f"❌ Failed to store reading in Hold database: {e}")
     finally:
-        client.switch_database(INFLUXDB_DBNAME)  # Switch back to main DB
-
-def store_reading_in_skarpt(json_object):
-    """Store sensor reading in Skarpt database"""
-    try:
-        current_time = datetime.utcnow().isoformat() + "Z"
-        point = {
-            "measurement": "sensor_readings",
-            "tags": {
-                "sensor_id": json_object["data"][0]["Sensorid"]
-            },
-            "time": current_time,
-            "fields": {
-                "temperature": json_object["data"][0]["temperature"],
-                "humidity": json_object["data"][0]["humidity"]
-            }
-        }
         client.switch_database(INFLUXDB_DBNAME)
-        client.write_points([point])
-        print(f"✅ Reading stored in Skarpt DB for sensor {json_object['data'][0]['Sensorid']}")
-    except Exception as e:
-        print(f"❌ Failed to store reading in Skarpt database: {e}")
 
 def retry_failed_readings():
-    """Attempt to resend failed readings from Hold database"""
+    """Retry sending failed readings from Hold DB"""
     query = 'SELECT * FROM "unsent_data"'
+
     try:
         client.switch_database(HOLD_DBNAME)
         result = client.query(query)
@@ -136,9 +136,10 @@ def retry_failed_readings():
             try:
                 json_object = json.loads(point["json_data"])
                 sensor_id = json_object["data"][0]["Sensorid"]
+
                 print(f"🔄 Retrying failed reading for sensor {sensor_id}")
 
-                if send_json_to_server(json_object):
+                if send_json_to_server(json_object): 
                     delete_query = f'DELETE FROM "unsent_data" WHERE time = \'{point["time"]}\''
                     client.query(delete_query)
                     print(f"✅ Successfully resent and removed reading for sensor {sensor_id}")
@@ -196,15 +197,18 @@ def listen_for_new_data():
             retry_failed_readings()
 
         for sensor_id in SENSOR_IDS:
+            temperature, humidity = fetch_latest_sensor_data(sensor_id)
+            if temperature is None and humidity is None:
+                continue
+
             current_date, current_time = get_current_date_time()
             json_object = {
                 "GatewayId": "87654321",
                 "Date": current_date,
                 "Time": current_time,
-                "data": [{"Sensorid": sensor_id, "humidity": 50.0, "temperature": 22.5}]
+                "data": [{"Sensorid": sensor_id, "humidity": humidity or 0, "temperature": temperature or 0}]
             }
 
-            store_reading_in_skarpt(json_object)
             send_json_to_server(json_object)
 
         time.sleep(2)
