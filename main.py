@@ -158,12 +158,17 @@ def send_json_to_server(json_object):
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
 
-        # ✅ Only return True if the server successfully processes the request
-        if response.status_code == 200 and "success" in response.text.lower():
-            print("✅ Data successfully sent")
-            return True  # ✅ Confirm success only when valid response is received
+        # ✅ Check both HTTP status code AND response content
+        if response.status_code == 200:
+            response_json = response.json()  # Try to parse JSON
+            if "success" in response_json and response_json["success"] is True:
+                print("✅ Data successfully sent")
+                return True  # ✅ Confirm success only when the response explicitly says so
+            else:
+                print(f"❌ Server response error: {response.status_code} - {response.text}")
+                return store_failed_reading(json_object)  # ❌ Store if not explicitly successful
         else:
-            print(f"❌ Server response error: {response.status_code} - {response.text}")
+            print(f"❌ Server responded with error: {response.status_code} - {response.text}")
             return store_failed_reading(json_object)
 
     except requests.RequestException as e:
