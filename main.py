@@ -32,7 +32,7 @@ ADD_READINGS_URI = config.get("add_readings_uri", "")
 USERNAME = config.get("username", "")
 PASSWORD = config.get("password", "")
 
-# ✅ Read sensor IDs as a *single comma-separated string* and split into 8-digit IDs
+# ✅ Read sensor IDs as a **single comma-separated string** and split into 8-digit IDs
 sensor_ids_str = config.get("sensor_ids", "")
 
 # ✅ Extract only valid 8-digit numeric sensor IDs using regex
@@ -53,6 +53,7 @@ LAST_HUMIDITY_TIMESTAMP = {sensor_id: None for sensor_id in SENSOR_IDS}
 # Connect to InfluxDB
 try:
     client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, INFLUXDB_DBNAME)
+    hold_client = InfluxDBClient(INFLUXDB_HOST, INFLUXDB_PORT, INFLUXDB_USER, INFLUXDB_PASSWORD, "Hold")
     print(f"✅ Connected to InfluxDB: {INFLUXDB_HOST}:{INFLUXDB_PORT}")
 except Exception as e:
     print(f"❌ Failed to connect to InfluxDB: {e}")
@@ -61,7 +62,7 @@ except Exception as e:
 # Function to get current date and time
 def get_current_date_time():
     now = datetime.now()
-    return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
+    return now.strftime("%Y/%m/%d"), now.strftime("%H:%M:%S")
 
 # Function to log in and retrieve a token
 TOKEN = ""
@@ -86,6 +87,32 @@ def login():
     except requests.RequestException as e:
         print(f"❌ Login request failed: {e}")
 
+# Function to store unsent data in the "Hold" database
+def store_unsent_data(json_object):
+    json_body = [
+        {
+            "measurement": "unsent_data",
+            "tags": {"sensor_id": json_object["87654321"]},
+            "fields": {
+                "json_data": json.dumps(json_object)
+            }
+        }
+    ]
+    hold_client.write_points(json_body)
+    print(f"⚠ Data stored in Hold DB for {json_object['87654321']}")
+
+# Function to retry sending unsent data
+def retry_sending_unsent_data():
+    query = 'SELECT * FROM "Hold"."autogen"."unsent_data"'
+    result = hold_client.query(query)
+    points = list(result.get_points())
+
+    for point in points:
+        json_data = json.loads(point["json_data"])
+        if send_json_to_server(json_data):  # If successful, remove from Hold DB
+            hold_client.query(f'DELETE FROM "unsent_data" WHERE sensor_id = \'{json_data["87654321"]}\'')
+            print(f"✅ Successfully sent and removed from Hold DB: {json_data['87654321']}")
+
 # Function to send data to cloud
 def send_json_to_server(json_object):
     global TOKEN
@@ -94,33 +121,35 @@ def send_json_to_server(json_object):
 
     if not ADD_READINGS_URI or not TOKEN:
         print("❌ Missing API endpoint or token. Skipping data send.")
-        return
+        store_unsent_data(json_object)  # Store in Hold DB
+        return False
 
     headers = {"token": TOKEN}
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
         if response.status_code == 200:
             print("✅ Data successfully sent")
+            retry_sending_unsent_data()  # Try to send stored data when online
             return True
         else:
             print(f"❌ Failed to send data: {response.status_code} {response.text}")
+            store_unsent_data(json_object)  # Store in Hold DB
             return False
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
+        store_unsent_data(json_object)  # Store in Hold DB
         return False
 
 # Function to fetch the latest temperature and humidity for a given sensor
 def fetch_latest_sensor_data(sensor_id):
-    global LAST_HUMIDITY  # Track last known humidity value
+    global LAST_HUMIDITY
 
-    # Query for latest temperature
     temp_query = f'''
     SELECT last("value") AS temperature, time 
     FROM "Skarpt"."autogen"."°C" 
     WHERE "entity_id" = '{sensor_id}_temperature'
     '''
 
-    # Query for latest humidity
     humidity_query = f'''
     SELECT last("value") AS humidity, time 
     FROM "Skarpt"."autogen"."%" 
@@ -128,19 +157,16 @@ def fetch_latest_sensor_data(sensor_id):
     '''
 
     try:
-        # Fetch Temperature Data
         temp_result = client.query(temp_query)
         temp_points = list(temp_result.get_points())
         temperature = temp_points[0]["temperature"] if temp_points else None
-        temp_timestamp = temp_points[0]["time"] if temp_points else None  # Temperature timestamp
+        temp_timestamp = temp_points[0]["time"] if temp_points else None
 
-        # Fetch Humidity Data
         humidity_result = client.query(humidity_query)
         humidity_points = list(humidity_result.get_points())
         humidity = humidity_points[0]["humidity"] if humidity_points else LAST_HUMIDITY.get(sensor_id, None)
-        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None  # Humidity timestamp
+        humidity_timestamp = humidity_points[0]["time"] if humidity_points else None
 
-        # Update last known humidity
         if humidity_points:
             LAST_HUMIDITY[sensor_id] = humidity
 
@@ -150,7 +176,7 @@ def fetch_latest_sensor_data(sensor_id):
         print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
         return None, None, None, None
 
-# Function to listen for new sensor updates for all sensors
+# Function to listen for new sensor updates
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
 
@@ -158,38 +184,23 @@ def listen_for_new_data():
         for sensor_id in SENSOR_IDS:
             latest_temperature, latest_humidity, temp_timestamp, humidity_timestamp = fetch_latest_sensor_data(sensor_id)
 
-            # Check if temperature changed
-            temp_changed = temp_timestamp and temp_timestamp != LAST_TEMP_TIMESTAMP.get(sensor_id, None)
-            humidity_changed = humidity_timestamp and humidity_timestamp != LAST_HUMIDITY_TIMESTAMP.get(sensor_id, None)
+            if latest_temperature is None and latest_humidity is None:
+                continue
 
-            # If either timestamp is new, process the data
-            if temp_changed or humidity_changed:
-                print(f"📢 New sensor reading detected: {sensor_id} | {latest_temperature}°C, {latest_humidity}% at {temp_timestamp if temp_changed else humidity_timestamp}")
+            current_date, current_time = get_current_date_time()
 
-                # Update timestamps individually
-                if temp_changed:
-                    LAST_TEMP_TIMESTAMP[sensor_id] = temp_timestamp
-                if humidity_changed:
-                    LAST_HUMIDITY_TIMESTAMP[sensor_id] = humidity_timestamp
+            json_object = {
+                "GatewayId": '87654321',
+                "Date": current_date,
+                "Time": current_time,
+                "data": [
+                    {"Sensorid": sensor_id, "humidity": latest_humidity or 0, "temperature": latest_temperature or 0}
+                ]
+            }
 
-                current_date, current_time = get_current_date_time()
+            send_json_to_server(json_object)
 
-                json_object = {
-                    "GatewayId": '87654321',  # Use sensor ID as Gateway ID
-                    "Date": current_date,
-                    "Time": current_time,
-                    "data": [
-                        {
-                            "Sensorid": sensor_id,  # Use sensor ID as Sensor ID
-                            "humidity": latest_humidity if latest_humidity is not None else 0,
-                            "temperature": latest_temperature if latest_temperature is not None else 0
-                        }
-                    ]
-                }
-
-                send_json_to_server(json_object)  # Send data to cloud
-
-        time.sleep(2)  # Small delay to avoid excessive queries
+        time.sleep(2)
 
 # Start listening for updates
 listen_for_new_data()
