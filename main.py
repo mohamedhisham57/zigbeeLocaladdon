@@ -253,7 +253,5 @@ def listen_for_new_data():
                 send_json_to_server(json_object)
 
         time.sleep(2)
-
-# Start the main loop
 if __name__ == "__main__":
-listen_for_new_data()
+    listen_for_new_data()
