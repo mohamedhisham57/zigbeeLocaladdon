@@ -21,7 +21,7 @@
     "username": "",
     "password": "",
     "sensor_ids": "",
-    "gateway_id": ""  // ✅ Added Gateway ID field
+    "gateway_id": "" 
   },
   "schema": {
     "influxdb_host": "str",
@@ -35,6 +35,6 @@
     "username": "str",
     "password": "password",
     "sensor_ids": "str",
-    "gateway_id": "str"  // ✅ Added schema for Gateway ID
+    "gateway_id": "str"  
   }
 }
