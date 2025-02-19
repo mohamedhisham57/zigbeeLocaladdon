@@ -82,37 +82,42 @@ def login():
 
 # ✅ Store reading in Hold DB if not sent successfully
 def store_reading_in_hold(json_object):
-    """Store failed reading in Hold DB only if it does not already exist."""
+    """Store an unsent reading in Hold DB only if it has not been stored already."""
     try:
         sensor_id = json_object["data"][0]["Sensorid"]
+        json_data = json.dumps(json_object)  # Convert JSON to string for exact match
         current_time = datetime.utcnow().isoformat() + "Z"
 
-        # ✅ Check if the reading already exists in Hold
-        query = f'SELECT * FROM "unsent_data" WHERE sensor_id = \'{sensor_id}\''
+        # ✅ Check if this exact JSON payload is already stored
+        query = f'''
+            SELECT COUNT(*) FROM "unsent_data"
+            WHERE "sensor_id" = '{sensor_id}'
+            AND "json_data" = '{json_data}'
+        '''
         client.switch_database(HOLD_DBNAME)
         result = client.query(query)
-        points = list(result.get_points())
 
-        if points:
-            print(f"⚠️ Duplicate found! Skipping duplicate store for sensor {sensor_id}")
-            return  # ✅ Avoid storing the same failed reading again
+        # ✅ If COUNT > 0, it means this reading has already been stored
+        if result and list(result.get_points())[0]['count'] > 0:
+            print(f"⚠️ Reading for sensor {sensor_id} already in Hold DB. Skipping save.")
+            return  # ✅ Avoid saving the same failed retry
 
-        # ✅ If not duplicate, store the reading
+        # ✅ If not stored yet, save the unsent reading
         point = {
             "measurement": "unsent_data",
             "tags": {"sensor_id": sensor_id},
             "time": current_time,
-            "fields": {"json_data": json.dumps(json_object)}
+            "fields": {"json_data": json_data}
         }
 
         client.write_points([point])
-        print(f"✅ Stored reading in Hold DB for sensor {sensor_id}")
+        print(f"✅ Stored new unsent reading in Hold DB for sensor {sensor_id}")
 
     except Exception as e:
         print(f"❌ Failed to store reading in Hold database: {e}")
 
     finally:
-        client.switch_database(INFLUXDB_DBNAME)
+        client.switch_database(INFLUXDB_DBNAME)  # Switch back to the main database
 
 # ✅ Retry sending failed readings from Hold DB
 def retry_failed_readings():
