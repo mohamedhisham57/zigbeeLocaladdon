@@ -176,6 +176,26 @@ def send_json_to_server(json_object):
         store_reading_in_hold(json_object)
         return False
 
+# ✅ Fetch the latest temperature and humidity for a given sensor
+def fetch_latest_sensor_data(sensor_id):
+    temp_query = f'SELECT last("value") AS temperature FROM "Skarpt"."autogen"."°C" WHERE "entity_id" = \'{sensor_id}_temperature\''
+    humidity_query = f'SELECT last("value") AS humidity FROM "Skarpt"."autogen"."%" WHERE "entity_id" = \'{sensor_id}_humidity\''
+
+    try:
+        temp_result = client.query(temp_query)
+        temp_points = list(temp_result.get_points())
+        temperature = temp_points[0]["temperature"] if temp_points else None
+
+        humidity_result = client.query(humidity_query)
+        humidity_points = list(humidity_result.get_points())
+        humidity = humidity_points[0]["humidity"] if humidity_points else None
+
+        return temperature, humidity
+
+    except Exception as e:
+        print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
+        return None, None
+
 # ✅ Main loop to listen for new sensor updates
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
