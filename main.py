@@ -255,5 +255,5 @@ def listen_for_new_data():
         time.sleep(2)
 
 # Start the main loop
-if __name__ == "__main__":
-    listen_for_new_data() 
+if _name_ == "_main_":
+    listen_for_new_data()
