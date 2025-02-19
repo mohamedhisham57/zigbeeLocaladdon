@@ -15,11 +15,13 @@
     "influxdb_user": "",
     "influxdb_password": "",
     "influxdb_dbname": "",
+    "hold_dbname": "Hold",
     "login_uri": "",
     "add_readings_uri": "",
     "username": "",
     "password": "",
-    "sensor_ids": ""
+    "sensor_ids": "",
+    "gateway_id": ""  // ✅ Added Gateway ID field
   },
   "schema": {
     "influxdb_host": "str",
@@ -27,10 +29,12 @@
     "influxdb_user": "str",
     "influxdb_password": "password",
     "influxdb_dbname": "str",
+    "hold_dbname": "str",
     "login_uri": "url",
     "add_readings_uri": "url",
     "username": "str",
     "password": "password",
-    "sensor_ids": "str"
+    "sensor_ids": "str",
+    "gateway_id": "str"  // ✅ Added schema for Gateway ID
   }
 }
