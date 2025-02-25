@@ -201,33 +201,40 @@ def fetch_latest_sensor_data(sensor_id):
         print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
         return None, None
 
-# ✅ Main loop to listen for new sensor updates
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
 
     while True:
-        retry_failed_readings()
+        retry_failed_readings()  # ✅ Retry any previously failed data submissions
 
         for sensor_id in SENSOR_IDS:
             temperature, humidity = fetch_latest_sensor_data(sensor_id)
 
             last_temp, last_hum = LAST_READINGS.get(sensor_id, (None, None))
-            if (temperature, humidity) == (last_temp, last_hum):
-                continue  # ✅ Skip if values haven't changed
 
-            LAST_READINGS[sensor_id] = (temperature, humidity)
+            if temperature is not None and humidity is not None:
+                # ✅ New data received, update last known values
+                LAST_READINGS[sensor_id] = (temperature, humidity)
+            else:
+                # ✅ No new data, use the last known values
+                temperature, humidity = last_temp, last_hum
+                print(f"⚠️ No new data for {sensor_id}, reusing last known values: Temp={temperature}, Humidity={humidity}")
 
-            current_date, current_time = get_current_date_time()
-            json_object = {
-                "GatewayId": GATEWAY_ID,  # ✅ Now using the Gateway ID from UI
-                "Date": current_date,
-                "Time": current_time,
-                "data": [{"Sensorid": sensor_id, "humidity": humidity or 0, "temperature": temperature or 0}]
-            }
+            # ✅ Ensure we have at least some valid data to send
+            if temperature is not None and humidity is not None:
+                current_date, current_time = get_current_date_time()
+                json_object = {
+                    "GatewayId": GATEWAY_ID,  # ✅ Use the Gateway ID from UI
+                    "Date": current_date,
+                    "Time": current_time,
+                    "data": [{"Sensorid": sensor_id, "humidity": humidity or 0, "temperature": temperature or 0}]
+                }
 
-            send_json_to_server(json_object)
+                send_json_to_server(json_object)
+            else:
+                print(f"❌ No valid data available for {sensor_id}, skipping this cycle.")
 
-        time.sleep(5)
+        time.sleep(60)  # ✅ Wait 1 minute before checking again
 
 import threading
 
