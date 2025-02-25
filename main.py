@@ -87,18 +87,23 @@ async def check_sensor_availability(sensor_id):
             if response.status == 200:
                 state_data = await response.json()
                 sensor_state = state_data['state']
+
                 if sensor_state == "unavailable":
                     print(f"⚠️ Sensor {sensor_id} is unavailable! Stopping updates for this sensor.")
-                    ACTIVE_SENSORS.discard(sensor_id)  # ✅ Remove from active sensors
-                elif sensor_id not in ACTIVE_SENSORS:  # ✅ Re-add sensor if it comes back online
+                    ACTIVE_SENSORS.discard(sensor_id)  # ✅ Stop sending updates but keep checking
+                elif sensor_id not in ACTIVE_SENSORS:
                     print(f"✅ Sensor {sensor_id} is back online! Resuming updates.")
-                    ACTIVE_SENSORS.add(sensor_id)
+                    ACTIVE_SENSORS.add(sensor_id)  # ✅ Add sensor back if it recovers
 
                 return sensor_state
+
+            elif response.status == 404:
+                print(f"🚨 Sensor {sensor_id} no longer exists! Removing it permanently.")
+                ACTIVE_SENSORS.discard(sensor_id)  # ✅ Remove it permanently
+
             else:
                 print(f"❌ Error fetching state for {sensor_id}: {response.status}")
                 return None
-
 
 # ✅ Function to check all sensors asynchronously
 async def check_all_sensors():
