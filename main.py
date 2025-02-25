@@ -232,4 +232,4 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("🚫 Script terminated by user.")
-            time.sleep(1)
+        time.sleep(1)
