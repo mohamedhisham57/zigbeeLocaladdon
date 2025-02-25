@@ -37,7 +37,6 @@ GATEWAY_ID = config.get("gateway_id", "")
 sensor_ids_str = config.get("sensor_ids", "")
 SENSOR_IDS = re.findall(r"\b\d{8}\b", sensor_ids_str)
 
-# ✅ Store last known readings & active sensors
 LAST_READINGS = {}
 ACTIVE_SENSORS = set(SENSOR_IDS)  # Keeps track of sensors that should still send data
 
@@ -50,16 +49,36 @@ except Exception as e:
     print(f"❌ Failed to connect to InfluxDB: {e}")
     exit(1)
 
+TOKEN = ""
+
+def login():
+    global TOKEN
+    basic_auth = f"{USERNAME}:{PASSWORD}"
+    encoded_u = base64.b64encode(basic_auth.encode()).decode()
+    headers = {"Authorization": f"Basic {encoded_u}"}
+
+    try:
+        response = requests.get(LOGIN_URI, headers=headers, verify=False, timeout=5)
+        if response.status_code == 200:
+            TOKEN = response.json().get('entity', [{}])[0].get('token', "")
+            print("✅ Token acquired successfully")
+        else:
+            print(f"❌ Login failed: {response.status_code} - {response.text}")
+    except requests.RequestException as e:
+        print(f"❌ Login request failed: {e}")
+
+
 # ✅ Function to get current date and time
 def get_current_date_time():
     now = datetime.now()
     return now.strftime("%Y/%m/%d"), now.strftime("%H/%M/%S")
 
+
 # ✅ Function to check if a sensor is available in Home Assistant
 async def check_sensor_availability(sensor_id):
     url = f'http://192.168.0.127:8123/api/states/sensor.{sensor_id}_temperature'
     headers = {
-        'Authorization': 'Bearer YOUR_LONG_LIVED_ACCESS_TOKEN',
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIwMjFkY2I5ZDU2NmQ0MzZhYjYzZTUzZmYwNTdjZjMxMCIsImlhdCI6MTc0MDQ3MzM0MywiZXhwIjoyMDU1ODMzMzQzfQ.ySMx8xhVOI4HWSUn3bWdUlhfo0td_fm1347gKOIPdxY',  # Ensure 'Bearer' is included
         'Content-Type': 'application/json',
     }
 
@@ -76,10 +95,12 @@ async def check_sensor_availability(sensor_id):
                 print(f"❌ Error fetching state for {sensor_id}: {response.status}")
                 return None
 
+
 # ✅ Function to check all sensors asynchronously
 async def check_all_sensors():
     tasks = [check_sensor_availability(sensor_id) for sensor_id in SENSOR_IDS]
     await asyncio.gather(*tasks)
+
 
 # ✅ Fetch latest temperature and humidity from InfluxDB
 def fetch_latest_sensor_data(sensor_id):
@@ -101,24 +122,34 @@ def fetch_latest_sensor_data(sensor_id):
         print(f"❌ InfluxDB query failed for {sensor_id}: {e}")
         return None, None
 
-# ✅ Function to send sensor data to the server
 def send_json_to_server(json_object):
-    headers = {
-        "Authorization": f"Basic {base64.b64encode(f'{USERNAME}:{PASSWORD}'.encode()).decode()}",
-        "Content-Type": "application/json",
-    }
+    global TOKEN
+    if not TOKEN:
+        login()
 
+    headers = {"token": TOKEN}
     try:
         response = requests.post(ADD_READINGS_URI, headers=headers, json=json_object, verify=False, timeout=5)
-        response_json = response.json()
 
-        if response_json.get("responseCode") == 200 and response_json.get("message") == "success":
-            print(f"✅ Data successfully sent: {json_object}")
-        else:
-            print(f"❌ Server rejected data: {response_json}")
+        try:
+            response_json = response.json()
+            if response_json.get("responseCode") == 200 and response_json.get("message") == "success":
+                print("✅ Data successfully sent")
+                return True
+            else:
+                print(f"❌ Server rejected data: {response_json}")
+                store_reading_in_hold(json_object)
+                return False
+
+        except json.JSONDecodeError:
+            print(f"❌ Server responded with invalid JSON: {response.status_code} - {response.text}")
+            store_reading_in_hold(json_object)
+            return False
 
     except requests.RequestException as e:
         print(f"❌ Error sending data to server: {e}")
+        store_reading_in_hold(json_object)
+        return False
 
 # ✅ Function to retry sending failed readings
 def retry_failed_readings():
@@ -152,6 +183,7 @@ def retry_failed_readings():
     finally:
         client.switch_database(INFLUXDB_DBNAME)
 
+
 # ✅ Function to listen for new data and send only available sensor readings
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
@@ -169,7 +201,8 @@ def listen_for_new_data():
                 LAST_READINGS[sensor_id] = (temperature, humidity)
             else:
                 temperature, humidity = last_temp, last_hum
-                print(f"⚠️ No new data for {sensor_id}, reusing last known values: Temp={temperature}, Humidity={humidity}")
+                print(
+                    f"⚠️ No new data for {sensor_id}, reusing last known values: Temp={temperature}, Humidity={humidity}")
 
             if temperature is not None and humidity is not None:
                 current_date, current_time = get_current_date_time()
@@ -183,17 +216,20 @@ def listen_for_new_data():
 
         time.sleep(60)  # ✅ Wait 1 minute before checking again
 
+
 # ✅ Start data listener in a separate thread
 def start_data_listener():
     listener_thread = threading.Thread(target=listen_for_new_data, daemon=True)
     listener_thread.start()
     print("✅ Sensor data listener started...")
 
+
 if __name__ == "__main__":
     start_data_listener()
-    
+
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("🚫 Script terminated by user.")
+            time.sleep(1)
