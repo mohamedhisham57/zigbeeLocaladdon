@@ -237,10 +237,10 @@ def retry_failed_readings():
 # ✅ Function to listen for new data and send only available sensor readings
 def listen_for_new_data():
     print("🔄 Listening for new sensor updates...")
-
     while True:
         # ✅ Check all sensors before fetching data
         asyncio.run(check_all_sensors())
+        retry_failed_readings()
 
         for sensor_id in list(ACTIVE_SENSORS):
             temperature, humidity = fetch_latest_sensor_data(sensor_id)
