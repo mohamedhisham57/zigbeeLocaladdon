@@ -19,7 +19,7 @@ ADD main.py .
 RUN pip install paho-mqtt 
 RUN pip install influxdb
 RUN pip install PyCRC-Hex
-
+RUN pip install aiohttp
 
 CMD ["python3" , "./main.py"]
 
