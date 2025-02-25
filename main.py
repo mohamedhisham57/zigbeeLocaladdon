@@ -90,6 +90,10 @@ async def check_sensor_availability(sensor_id):
                 if sensor_state == "unavailable":
                     print(f"⚠️ Sensor {sensor_id} is unavailable! Stopping updates for this sensor.")
                     ACTIVE_SENSORS.discard(sensor_id)  # ✅ Remove from active sensors
+                elif sensor_id not in ACTIVE_SENSORS:  # ✅ Re-add sensor if it comes back online
+                    print(f"✅ Sensor {sensor_id} is back online! Resuming updates.")
+                    ACTIVE_SENSORS.add(sensor_id)
+
                 return sensor_state
             else:
                 print(f"❌ Error fetching state for {sensor_id}: {response.status}")
