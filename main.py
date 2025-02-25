@@ -160,6 +160,47 @@ def send_json_to_server(json_object):
         store_reading_in_hold(json_object)
         return False
 
+#*********************************************************************************************************
+def store_reading_in_hold(json_object):
+    """Store an unsent reading in Hold DB only if it has not been stored already."""
+    try:
+        sensor_id = json_object["data"][0]["Sensorid"]
+        json_data = json.dumps(json_object)  # Convert JSON to string for exact match
+        current_time = datetime.utcnow().isoformat() + "Z"
+
+        # ✅ Check if this exact JSON payload is already stored
+        query = f'''
+            SELECT COUNT(*) FROM "unsent_data"
+            WHERE "sensor_id" = '{sensor_id}'
+            AND "json_data" = '{json_data}'
+        '''
+        client.switch_database(HOLD_DBNAME)
+        result = client.query(query)
+
+        # ✅ If COUNT > 0, it means this reading has already been stored
+        if result and list(result.get_points())[0]['count'] > 0:
+            print(f"⚠️ Reading for sensor {sensor_id} already in Hold DB. Skipping save.")
+            return  # ✅ Avoid saving the same failed retry
+
+        # ✅ If not stored yet, save the unsent reading
+        point = {
+            "measurement": "unsent_data",
+            "tags": {"sensor_id": sensor_id},
+            "time": current_time,
+            "fields": {"json_data": json_data}
+        }
+
+        client.write_points([point])
+        print(f"✅ Stored new unsent reading in Hold DB for sensor {sensor_id}")
+
+    except Exception as e:
+        print(f"❌ Failed to store reading in Hold database: {e}")
+
+    finally:
+        client.switch_database(INFLUXDB_DBNAME)  # Switch back to the main database
+
+#*********************************************************************************************************
+
 # ✅ Function to retry sending failed readings
 def retry_failed_readings():
     query = 'SELECT * FROM "unsent_data" LIMIT 10'
